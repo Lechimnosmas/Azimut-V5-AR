@@ -1,0 +1,1757 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Azimut - OpenStreetMap</title>
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    font-family: Arial, sans-serif;
+}
+
+#map {
+    width: 100%;
+    height: 70vh;
+}
+
+#panel {
+    box-sizing: border-box;
+    padding: 15px 20px;
+    background: white;
+    height: 30vh;
+}
+
+h2 {
+    margin: 0 0 8px 0;
+    color: #174ea6;
+}
+
+#message {
+    margin-bottom: 10px;
+}
+
+.results {
+    display: flex;
+    gap: 30px;
+    flex-wrap: wrap;
+}
+
+.label {
+    color: #666;
+    font-size: 13px;
+}
+
+.value {
+    font-size: 20px;
+    font-weight: bold;
+    color: #174ea6;
+}
+
+button {
+    margin-top: 12px;
+    margin-right: 6px;
+    padding: 8px 15px;
+    background: #174ea6;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #0d3b80;
+}
+
+.azimut-label {
+    background: transparent;
+    border: none;
+}
+
+
+.fond-menu {
+    display: none;
+    margin-top: 5px;
+    gap: 3px;
+    flex-direction: column;
+}
+.fond-control.ouvert .fond-menu { display: flex; }
+.fond-toggle {
+    margin: 0;
+    padding: 8px 10px;
+    background: #174ea6;
+    color: white;
+    border: 0;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* Contrôle des fonds de carte */
+.fond-control {
+    background: rgba(255,255,255,0.96);
+    border-radius: 10px;
+    padding: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+    border: 1px solid rgba(0,0,0,0.15);
+}
+
+.fond-titre {
+    font-size: 10px;
+    font-weight: bold;
+    color: #555;
+    text-align: center;
+    margin-bottom: 6px;
+    letter-spacing: 0.4px;
+}
+
+.fond-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.fond-btn {
+    margin: 0;
+    padding: 7px 8px;
+    background: #f2f2f2;
+    color: #333;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.fond-btn:hover {
+    background: #e5e5e5;
+}
+
+.fond-btn.actif {
+    background: #174ea6;
+    color: white;
+    border-color: #174ea6;
+}
+
+/* Lisibilité du rapporteur sur les images satellite */
+.leaflet-marker-icon.azimut-label {
+    text-shadow:
+        0 0 3px white,
+        0 0 3px white,
+        0 0 5px white;
+    z-index: 1000 !important;
+}
+
+@media (max-width: 600px) {
+    .fond-control {
+        padding: 5px;
+    }
+
+    .fond-buttons {
+        gap: 2px;
+    }
+
+    .fond-btn {
+        padding: 6px 5px;
+        font-size: 11px;
+    }
+
+    .fond-titre {
+        display: none;
+    }
+}
+
+
+/* Mode boussole et retour GPS */
+.compass-control, .locate-control {
+    background: rgba(255,255,255,0.96);
+    border-radius: 10px;
+    padding: 7px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+    border: 1px solid rgba(0,0,0,0.15);
+}
+.compass-control button, .locate-control button {
+    margin: 0;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: #174ea6;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.compass-control button.actif { background: #16803c; }
+.heading-readout {
+    margin-top: 5px;
+    font-size: 11px;
+    text-align: center;
+    color: #444;
+    white-space: nowrap;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+<div id="map"></div>
+
+<div id="panel">
+
+<h2>🧭 Calculateur d'azimut</h2>
+
+<div id="message">
+Recherche de votre position GPS...
+</div>
+
+<div class="results">
+
+<div>
+<div class="label">Azimut A → B</div>
+<div class="value" id="azimut">—</div>
+</div>
+
+<div>
+<div class="label">Distance</div>
+<div class="value" id="distance">—</div>
+</div>
+
+<div>
+<div class="label">Direction</div>
+<div class="value" id="direction">—</div>
+</div>
+
+<div>
+<div class="label">Point A</div>
+<div id="coordA">—</div>
+</div>
+
+<div>
+<div class="label">Point B</div>
+<div id="coordB">—</div>
+</div>
+
+</div>
+
+<button onclick="resetCarte()">Réinitialiser</button>
+
+<button onclick="maPosition()">
+📍 Ma position → A
+</button>
+
+<button onclick="recentrerPosition()">
+📍 Revenir à ma position
+</button>
+
+<button id="compassButton" onclick="activerBoussole()">
+🧭 Suivre l’iPhone
+</button>
+
+</div>
+
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+
+<script>
+
+/* =========================================================
+   CRÉATION DE LA CARTE
+   ========================================================= */
+
+const map = L.map("map").setView(
+    [46.8034, -71.2172],
+    16
+);
+
+
+/* =========================================================
+   FONDS DE CARTE — contrôle compact
+   ========================================================= */
+
+const osmLayer = L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap contributors"
+    }
+);
+
+const satelliteLayer = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    {
+        maxZoom: 19,
+        attribution: "Tiles &copy; Esri"
+    }
+);
+
+const osmLabelsLayer = L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {
+        maxZoom: 19,
+        opacity: 0.62,
+        attribution: "&copy; OpenStreetMap contributors"
+    }
+);
+
+const topoLayer = L.tileLayer(
+    "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+    {
+        minZoom: 3,
+        maxZoom: 17,
+        attribution: "Map data &copy; OpenStreetMap contributors, SRTM | Map style &copy; OpenTopoMap (CC-BY-SA)"
+    }
+);
+
+osmLayer.addTo(map);
+
+let fondActuel = "osm";
+
+function appliquerFond(type) {
+    map.removeLayer(osmLayer);
+    map.removeLayer(satelliteLayer);
+    map.removeLayer(osmLabelsLayer);
+    map.removeLayer(topoLayer);
+
+    if (type === "osm") {
+        osmLayer.addTo(map);
+    } else if (type === "satellite") {
+        satelliteLayer.addTo(map);
+    } else if (type === "hybride") {
+        satelliteLayer.addTo(map);
+        osmLabelsLayer.addTo(map);
+    } else if (type === "topo") {
+        topoLayer.addTo(map);
+    }
+
+    fondActuel = type;
+
+    const labels = { osm: "🗺️ Carte", satellite: "🛰️ Satellite", hybride: "🌍 Hybride", topo: "🏔️ Topo" };
+    const toggle = document.querySelector(".fond-toggle");
+    if (toggle) toggle.innerHTML = `${labels[type]} ▾`;
+
+    document.querySelectorAll(".fond-btn").forEach(btn => {
+        btn.classList.toggle("actif", btn.dataset.fond === type);
+    });
+}
+
+/* Contrôle personnalisé */
+const FondControl = L.Control.extend({
+    options: { position: "topright" },
+
+    onAdd: function() {
+        const container = L.DomUtil.create("div", "fond-control");
+        container.innerHTML = `
+            <button class="fond-toggle">🗺️ Fond de carte ▾</button>
+            <div class="fond-menu">
+                <button class="fond-btn actif" data-fond="osm">🗺️ OpenStreetMap</button>
+                <button class="fond-btn" data-fond="satellite">🛰️ Satellite</button>
+                <button class="fond-btn" data-fond="hybride">🌍 Hybride</button>
+                <button class="fond-btn" data-fond="topo">🏔️ Topographique</button>
+            </div>
+        `;
+
+        const toggle = container.querySelector(".fond-toggle");
+        L.DomEvent.on(toggle, "click", function() {
+            container.classList.toggle("ouvert");
+        });
+
+        L.DomEvent.disableClickPropagation(container);
+
+        container.querySelectorAll(".fond-btn").forEach(btn => {
+            L.DomEvent.on(btn, "click", function() {
+                    appliquerFond(this.dataset.fond);
+                container.classList.remove("ouvert");
+            });
+        });
+
+        return container;
+    }
+});
+
+map.addControl(new FondControl());
+
+/* =========================================================
+   VARIABLES
+   ========================================================= */
+
+let A = null;
+let B = null;
+
+let markerA = null;
+let markerB = null;
+let ligne = null;
+
+let rapporteur = null;
+
+
+/* Position GPS */
+
+let positionMarker = null;
+let positionCircle = null;
+
+/* =========================================================
+   BOUSSOLE / DÉCLINAISON MAGNÉTIQUE
+   ========================================================= */
+let boussoleActive = false;
+let capMagnetique = null;
+let capVrai = null;
+let declinaison = null;
+let precisionBoussole = null;
+let dernierePositionDeclinaison = null;
+
+function normaliserAngle(angle) {
+    return (angle % 360 + 360) % 360;
+}
+
+function obtenirDateWMM() {
+    const d = new Date();
+    return { y: d.getUTCFullYear(), m: d.getUTCMonth()+1, day: d.getUTCDate() };
+}
+
+/* Déclinaison WMM2025 via le calculateur programmatique NOAA/NCEI.
+   Est = positif, Ouest = négatif. */
+async function mettreAJourDeclinaison(lat, lon) {
+    const d = obtenirDateWMM();
+    const url =
+        "https://www.ngdc.noaa.gov/geomag-web/calculators/calculateDeclination" +
+        `?lat1=${encodeURIComponent(lat)}&lon1=${encodeURIComponent(lon)}` +
+        `&model=WMM&startYear=${d.y}&startMonth=${d.m}&startDay=${d.day}` +
+        "&key=zNEw7&resultFormat=json";
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("NOAA HTTP " + response.status);
+        const data = await response.json();
+        const valeur = data?.result?.[0]?.declination ?? data?.declination ?? data?.D;
+        if (typeof valeur !== "number") throw new Error("Déclinaison NOAA introuvable");
+        declinaison = valeur;
+        dernierePositionDeclinaison = { lat, lon };
+        afficherEtatBoussole();
+        mettreAJourRapporteur();
+    } catch (e) {
+        document.getElementById("message").innerHTML =
+            "⚠️ Déclinaison magnétique indisponible. Vérifiez la connexion Internet.";
+    }
+}
+
+function afficherEtatBoussole() {
+    const btn = document.getElementById("compassButton");
+    if (!btn) return;
+    btn.classList.toggle("actif", boussoleActive);
+    btn.innerHTML = boussoleActive ? "🧭 Boussole active" : "🧭 Suivre l’iPhone";
+
+    let r = document.getElementById("headingReadout");
+    if (!r) {
+        r = document.createElement("div");
+        r.id = "headingReadout";
+        r.className = "heading-readout";
+        btn.parentElement.appendChild(r);
+    }
+    if (!boussoleActive || capVrai === null) {
+        r.innerHTML = "";
+        return;
+    }
+    const dec = declinaison === null ? "—" : `${declinaison >= 0 ? "+" : ""}${declinaison.toFixed(1)}°`;
+    const acc = precisionBoussole === null ? "" : ` · ±${precisionBoussole.toFixed(0)}°`;
+    r.innerHTML = `Vrai&nbsp; ${capVrai.toFixed(1)}°<br>Déclinaison&nbsp; ${dec}${acc}`;
+}
+
+async function activerBoussole() {
+    if (boussoleActive) {
+        boussoleActive = false;
+        window.removeEventListener("deviceorientation", gererOrientation);
+        window.removeEventListener("deviceorientationabsolute", gererOrientation);
+        afficherEtatBoussole();
+        if (A && B) calculerAzimut(A, B);
+        else if (!A) {
+            document.getElementById("azimut").innerHTML = "—";
+            document.getElementById("direction").innerHTML = "—";
+        }
+        if (A) dessinerRapporteur();
+        return;
+    }
+
+    if (!window.isSecureContext) {
+        alert("La boussole nécessite une page HTTPS (par exemple GitHub Pages).");
+        return;
+    }
+
+    try {
+        if (typeof DeviceOrientationEvent !== "undefined" &&
+            typeof DeviceOrientationEvent.requestPermission === "function") {
+            const permission = await DeviceOrientationEvent.requestPermission(true);
+            if (permission !== "granted") {
+                alert("L’accès à la boussole a été refusé. Autorisez l’orientation dans Safari.");
+                return;
+            }
+        }
+
+        boussoleActive = true;
+        window.addEventListener("deviceorientation", gererOrientation, true);
+        window.addEventListener("deviceorientationabsolute", gererOrientation, true);
+        afficherEtatBoussole();
+        if (A) dessinerRapporteur();
+    } catch (e) {
+        alert("Impossible d’activer la boussole sur cet appareil/navigateur.");
+    }
+}
+
+function gererOrientation(event) {
+    if (!boussoleActive) return;
+    let heading = event.webkitCompassHeading;
+
+    if (typeof heading !== "number" || heading < 0) {
+        if (event.absolute && typeof event.alpha === "number") {
+            heading = normaliserAngle(360 - event.alpha);
+        } else {
+            return;
+        }
+    }
+
+    capMagnetique = normaliserAngle(heading);
+    precisionBoussole = typeof event.webkitCompassAccuracy === "number" && event.webkitCompassAccuracy >= 0
+        ? event.webkitCompassAccuracy : null;
+
+    if (declinaison !== null) {
+        capVrai = normaliserAngle(capMagnetique + declinaison);
+    } else {
+        capVrai = capMagnetique;
+    }
+
+    afficherEtatBoussole();
+
+    if (boussoleActive && capVrai !== null) {
+        document.getElementById("azimut").innerHTML =
+            capVrai.toFixed(4) + "°<br><small>Azimut vrai de l’iPhone</small>";
+        document.getElementById("direction").innerHTML = directionDepuisAzimut(capVrai);
+    } else if (A && B) {
+        calculerAzimut(A, B);
+    }
+
+    if (A) dessinerRapporteur();
+}
+
+function directionDepuisAzimut(azimut) {
+    if (azimut < 22.5 || azimut >= 337.5) return "Nord";
+    if (azimut < 67.5) return "Nord-Est";
+    if (azimut < 112.5) return "Est";
+    if (azimut < 157.5) return "Sud-Est";
+    if (azimut < 202.5) return "Sud";
+    if (azimut < 247.5) return "Sud-Ouest";
+    if (azimut < 292.5) return "Ouest";
+    return "Nord-Ouest";
+}
+
+function mettreAJourRapporteur() {
+    if (A) dessinerRapporteur();
+}
+
+function recentrerPosition() {
+    if (!navigator.geolocation) {
+        alert("La géolocalisation n'est pas disponible.");
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(
+        function(position) {
+            const ll = L.latLng(position.coords.latitude, position.coords.longitude);
+            map.setView(ll, Math.max(map.getZoom(), 16));
+            afficherPosition(position);
+            if (boussoleActive && declinaison === null) mettreAJourDeclinaison(ll.lat, ll.lng);
+        },
+        erreurPosition,
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    );
+}
+
+
+
+/* =========================================================
+   POSITION GPS AUTOMATIQUE
+   ========================================================= */
+
+function afficherPosition(position) {
+
+    const lat =
+        position.coords.latitude;
+
+    const lon =
+        position.coords.longitude;
+
+    const precision =
+        position.coords.accuracy;
+
+
+    const positionActuelle =
+        L.latLng(lat, lon);
+
+    if (declinaison === null || !dernierePositionDeclinaison ||
+        map.distance(L.latLng(dernierePositionDeclinaison.lat, dernierePositionDeclinaison.lon), positionActuelle) > 5000) {
+        mettreAJourDeclinaison(lat, lon);
+    }
+
+
+    /* Supprimer l'ancien affichage */
+
+    if (positionMarker)
+        map.removeLayer(positionMarker);
+
+    if (positionCircle)
+        map.removeLayer(positionCircle);
+
+
+    /* Point bleu */
+
+    positionMarker =
+        L.circleMarker(
+            positionActuelle,
+            {
+                radius: 8,
+                color: "#ffffff",
+                weight: 3,
+                fillColor: "#1976d2",
+                fillOpacity: 1,
+                interactive: false
+            }
+        ).addTo(map);
+
+
+    positionMarker.bindPopup(
+        "<b>📍 Ma position</b><br>" +
+        lat.toFixed(6) +
+        ", " +
+        lon.toFixed(6) +
+        "<br>Précision GPS : ±" +
+        precision.toFixed(1) +
+        " m"
+    );
+
+
+    /* Cercle de précision GPS */
+
+    positionCircle =
+        L.circle(
+            positionActuelle,
+            {
+                radius: precision,
+                color: "#1976d2",
+                weight: 1,
+                fillColor: "#1976d2",
+                fillOpacity: 0.10,
+                interactive: false
+            }
+        ).addTo(map);
+
+
+    /*
+       Centrer automatiquement la carte
+       sur la position au démarrage.
+    */
+
+    map.setView(
+        positionActuelle,
+        16
+    );
+
+
+    document.getElementById(
+        "message"
+    ).innerHTML =
+        "🔵 Position GPS trouvée. Cliquez sur la carte pour placer le <b>point A</b>.";
+}
+
+
+/* =========================================================
+   ERREUR GPS
+   ========================================================= */
+
+function erreurPosition(error) {
+
+    document.getElementById(
+        "message"
+    ).innerHTML =
+        "⚠️ Position GPS indisponible. " +
+        "Autorisez la localisation pour cette page dans Safari.";
+}
+
+
+/* =========================================================
+   DEMANDE DE POSITION
+   ========================================================= */
+
+function obtenirPosition() {
+
+    if (!navigator.geolocation) {
+
+        document.getElementById(
+            "message"
+        ).innerHTML =
+            "⚠️ La géolocalisation n'est pas disponible.";
+
+        return;
+    }
+
+
+    navigator.geolocation.getCurrentPosition(
+        afficherPosition,
+        erreurPosition,
+        {
+            enableHighAccuracy: true,
+            maximumAge: 5000,
+            timeout: 15000
+        }
+    );
+}
+
+
+/* =========================================================
+   METTRE MA POSITION COMME POINT A
+   ========================================================= */
+
+function maPosition() {
+
+    if (!navigator.geolocation) {
+
+        alert(
+            "La géolocalisation n'est pas disponible."
+        );
+
+        return;
+    }
+
+
+    navigator.geolocation.getCurrentPosition(
+
+        function(position) {
+
+            const lat =
+                position.coords.latitude;
+
+            const lon =
+                position.coords.longitude;
+
+
+            /* Supprimer A précédent */
+
+            if (markerA)
+                map.removeLayer(markerA);
+
+
+            if (rapporteur)
+                map.removeLayer(rapporteur);
+
+
+            /* Nouveau A */
+
+            A =
+                L.latLng(
+                    lat,
+                    lon
+                );
+
+
+            /* Marqueur A */
+
+            markerA =
+                L.marker(A)
+                .addTo(map)
+                .bindPopup(
+                    "<b>Point A — Ma position</b><br>" +
+                    lat.toFixed(6) +
+                    ", " +
+                    lon.toFixed(6)
+                )
+                .openPopup();
+
+
+            document.getElementById(
+                "coordA"
+            ).innerHTML =
+                lat.toFixed(6) +
+                ", " +
+                lon.toFixed(6);
+
+
+            /* Si B existe déjà */
+
+            if (B) {
+
+                if (ligne)
+                    ligne.setLatLngs(
+                        [A, B]
+                    );
+
+                calculerAzimut(
+                    A,
+                    B
+                );
+            }
+
+
+            /* Nouveau rapporteur */
+
+            creerRapporteur();
+
+
+            /* Centrer la carte */
+
+            map.setView(
+                A,
+                Math.max(
+                    map.getZoom(),
+                    16
+                )
+            );
+
+
+            document.getElementById(
+                "message"
+            ).innerHTML =
+                "<b>A = votre position GPS.</b> " +
+                "Cliquez sur la carte pour placer B.";
+        },
+
+        erreurPosition,
+
+        {
+            enableHighAccuracy: true,
+            maximumAge: 5000,
+            timeout: 15000
+        }
+    );
+}
+
+
+/* =========================================================
+   VARIABLES DE L'APPLICATION
+   ========================================================= */
+
+let initialisationTerminee = false;
+
+
+/* =========================================================
+   CLIC SUR LA CARTE
+   ========================================================= */
+
+map.on(
+    "click",
+    function(e) {
+
+        /* Premier clic = A */
+
+        if (A === null) {
+
+            A =
+                e.latlng;
+
+
+            markerA =
+                L.marker(A)
+                .addTo(map)
+                .bindPopup(
+                    "<b>Point A</b><br>" +
+                    A.lat.toFixed(6) +
+                    ", " +
+                    A.lng.toFixed(6)
+                )
+                .openPopup();
+
+
+            document.getElementById(
+                "coordA"
+            ).innerHTML =
+                A.lat.toFixed(6) +
+                ", " +
+                A.lng.toFixed(6);
+
+
+            document.getElementById(
+                "message"
+            ).innerHTML =
+                "Point A placé. Cliquez maintenant pour placer le <b>point B</b>.";
+
+
+            creerRapporteur();
+
+
+            return;
+        }
+
+
+        /* Deuxième clic = B */
+
+        else if (B === null) {
+
+            B =
+                e.latlng;
+
+
+            markerB =
+                L.marker(
+                    B,
+                    {
+                        draggable: true
+                    }
+                )
+                .addTo(map)
+                .bindPopup(
+                    "<b>Point B</b><br>" +
+                    B.lat.toFixed(6) +
+                    ", " +
+                    B.lng.toFixed(6)
+                )
+                .openPopup();
+
+
+            /* B déplaçable */
+
+            markerB.on(
+                "drag",
+                function(e) {
+
+                    B =
+                        e.target.getLatLng();
+
+
+                    document.getElementById(
+                        "coordB"
+                    ).innerHTML =
+                        B.lat.toFixed(6) +
+                        ", " +
+                        B.lng.toFixed(6);
+
+
+                    if (ligne) {
+
+                        ligne.setLatLngs(
+                            [A, B]
+                        );
+                    }
+
+
+                    calculerAzimut(
+                        A,
+                        B
+                    );
+                }
+            );
+
+
+            document.getElementById(
+                "coordB"
+            ).innerHTML =
+                B.lat.toFixed(6) +
+                ", " +
+                B.lng.toFixed(6);
+
+
+            /* Ligne A → B */
+
+            ligne =
+                L.polyline(
+                    [A, B],
+                    {
+                        color: "red",
+                        weight: 4
+                    }
+                ).addTo(map);
+
+
+            /* Calcul */
+
+            calculerAzimut(
+                A,
+                B
+            );
+
+
+            document.getElementById(
+                "message"
+            ).innerHTML =
+                "<b>A → B</b> terminé. " +
+                "Vous pouvez déplacer B avec le doigt.";
+
+
+            return;
+        }
+
+    }
+);
+
+
+/* =========================================================
+   CRÉATION DU RAPORTEUR
+   ========================================================= */
+
+function creerRapporteur() {
+
+    if (!A)
+        return;
+
+
+    if (rapporteur)
+        map.removeLayer(
+            rapporteur
+        );
+
+
+    rapporteur =
+        L.layerGroup()
+        .addTo(map);
+
+
+    dessinerRapporteur();
+}
+
+
+/* =========================================================
+   CALCUL D'UN POINT À PARTIR D'UN AZIMUT
+   ========================================================= */
+
+function destination(
+    point,
+    bearing,
+    distance
+) {
+
+    const R =
+        6371000;
+
+
+    const lat1 =
+        point.lat *
+        Math.PI / 180;
+
+
+    const lon1 =
+        point.lng *
+        Math.PI / 180;
+
+
+    const brng =
+        bearing *
+        Math.PI / 180;
+
+
+    const d =
+        distance / R;
+
+
+    const lat2 =
+        Math.asin(
+            Math.sin(lat1) *
+            Math.cos(d) +
+            Math.cos(lat1) *
+            Math.sin(d) *
+            Math.cos(brng)
+        );
+
+
+    const lon2 =
+        lon1 +
+        Math.atan2(
+            Math.sin(brng) *
+            Math.sin(d) *
+            Math.cos(lat1),
+
+            Math.cos(d) -
+            Math.sin(lat1) *
+            Math.sin(lat2)
+        );
+
+
+    return L.latLng(
+        lat2 * 180 / Math.PI,
+        lon2 * 180 / Math.PI
+    );
+}
+
+
+/* =========================================================
+   DESSIN DU RAPORTEUR
+   ========================================================= */
+
+function dessinerRapporteur() {
+
+    if (!A || !rapporteur)
+        return;
+
+
+    rapporteur.clearLayers();
+
+
+    const largeurCarte =
+        map.getSize().x;
+
+
+    const rayonPixels =
+        Math.min(
+            Math.max(
+                140,
+                largeurCarte * 0.20
+            ),
+            260
+        );
+
+
+    const centrePixel =
+        map.latLngToContainerPoint(
+            A
+        );
+
+
+    const bordPixel =
+        L.point(
+            centrePixel.x +
+            rayonPixels,
+
+            centrePixel.y
+        );
+
+
+    const bordLatLng =
+        map.containerPointToLatLng(
+            bordPixel
+        );
+
+
+    const rayonMetres =
+        map.distance(
+            A,
+            bordLatLng
+        );
+
+
+    /* Cercle principal */
+
+    L.circle(
+        A,
+        {
+            radius: rayonMetres,
+            color: "#174ea6",
+            weight: 2,
+            fillColor: "#4d90fe",
+            fillOpacity: 0.04,
+            interactive: false
+        }
+    ).addTo(
+        rapporteur
+    );
+
+
+    /* Intervalle des graduations */
+
+    let intervalle;
+
+
+    if (map.getZoom() >= 18) {
+
+        intervalle = 5;
+
+    }
+
+    else if (map.getZoom() >= 16) {
+
+        intervalle = 10;
+
+    }
+
+    else {
+
+        intervalle = 30;
+
+    }
+
+
+    /* Graduations */
+
+    /* En mode boussole, le 0° du rapporteur suit le cap vrai de l’iPhone. */
+    const rotationBoussole = boussoleActive && capVrai !== null ? capVrai : 0;
+
+    for (
+        let angle = 0;
+        angle < 360;
+        angle += intervalle
+    ) {
+
+        const grandeGraduation =
+            angle % 30 === 0;
+
+
+        const moyenneGraduation =
+            angle % 10 === 0;
+
+
+        let longueur;
+
+
+        if (grandeGraduation)
+            longueur = 18;
+
+        else if (moyenneGraduation)
+            longueur = 11;
+
+        else
+            longueur = 7;
+
+
+        const exterieur =
+            destination(
+                A,
+                normaliserAngle(angle + rotationBoussole),
+                rayonMetres
+            );
+
+
+        const rayonInterieur =
+            rayonMetres -
+            longueur *
+            rayonMetres /
+            rayonPixels;
+
+
+        const interieur =
+            destination(
+                A,
+                normaliserAngle(angle + rotationBoussole),
+                rayonInterieur
+            );
+
+
+        L.polyline(
+            [
+                interieur,
+                exterieur
+            ],
+            {
+                color: "#174ea6",
+                weight:
+                    grandeGraduation
+                    ? 3
+                    : 1,
+                interactive: false
+            }
+        ).addTo(
+            rapporteur
+        );
+
+
+        /* Étiquettes */
+
+        if (
+            angle % 30 === 0 ||
+            (
+                map.getZoom() >= 16 &&
+                angle % 10 === 0
+            )
+        ) {
+
+            const labelPoint =
+                destination(
+                    A,
+                    normaliserAngle(angle + rotationBoussole),
+                    rayonMetres * 1.12
+                );
+
+
+            let couleur =
+                "#174ea6";
+
+
+            if (angle === 0)
+                couleur =
+                    "#d71920";
+
+
+            const taille =
+                angle % 30 === 0
+                ? "13px"
+                : "10px";
+
+
+            L.marker(
+                labelPoint,
+                {
+                    icon:
+                        L.divIcon(
+                            {
+                                className:
+                                    "azimut-label",
+
+                                html:
+                                    "<div style=\"" +
+                                    "font-family:Arial;" +
+                                    "font-size:" +
+                                    taille +
+                                    ";" +
+                                    "font-weight:bold;" +
+                                    "color:" +
+                                    couleur +
+                                    ";" +
+                                    "text-align:center;" +
+                                    "white-space:nowrap;" +
+                                    "\">" +
+                                    angle +
+                                    "°" +
+                                    "</div>",
+
+                                iconSize:
+                                    [40, 20],
+
+                                iconAnchor:
+                                    [20, 10]
+                            }
+                        ),
+
+                    interactive: false
+                }
+            ).addTo(
+                rapporteur
+            );
+        }
+    }
+
+
+    /* Points cardinaux */
+
+    ajouterCardinal(
+        0,
+        "N",
+        "#d71920"
+    );
+
+    ajouterCardinal(
+        90,
+        "E",
+        "#174ea6"
+    );
+
+    ajouterCardinal(
+        180,
+        "S",
+        "#174ea6"
+    );
+
+    ajouterCardinal(
+        270,
+        "O",
+        "#174ea6"
+    );
+}
+
+
+/* =========================================================
+   POINTS CARDINAUX
+   ========================================================= */
+
+function ajouterCardinal(
+    angle,
+    texte,
+    couleur
+) {
+
+    const position =
+        destination(
+            A,
+            normaliserAngle(angle + (boussoleActive && capVrai !== null ? capVrai : 0)),
+            calculerRayon() *
+            1.20
+        );
+
+
+    L.marker(
+        position,
+        {
+            icon:
+                L.divIcon(
+                    {
+                        className: "",
+
+                        html:
+                            "<div style=\"" +
+                            "font-family:Arial;" +
+                            "font-size:18px;" +
+                            "font-weight:bold;" +
+                            "color:" +
+                            couleur +
+                            ";" +
+                            "text-align:center;" +
+                            "\">" +
+                            texte +
+                            "</div>",
+
+                        iconSize:
+                            [30, 30],
+
+                        iconAnchor:
+                            [15, 15]
+                    }
+                ),
+
+            interactive: false
+        }
+    ).addTo(
+        rapporteur
+    );
+}
+
+
+/* =========================================================
+   CALCUL DU RAYON
+   ========================================================= */
+
+function calculerRayon() {
+
+    const largeurCarte =
+        map.getSize().x;
+
+
+    const rayonPixels =
+        Math.min(
+            Math.max(
+                140,
+                largeurCarte * 0.20
+            ),
+            260
+        );
+
+
+    const centrePixel =
+        map.latLngToContainerPoint(
+            A
+        );
+
+
+    const bordPixel =
+        L.point(
+            centrePixel.x +
+            rayonPixels,
+
+            centrePixel.y
+        );
+
+
+    const bordLatLng =
+        map.containerPointToLatLng(
+            bordPixel
+        );
+
+
+    return map.distance(
+        A,
+        bordLatLng
+    );
+}
+
+
+/* =========================================================
+   REDESSIN DU RAPORTEUR
+   ========================================================= */
+
+map.on(
+    "zoomend",
+    function() {
+
+        if (A)
+            dessinerRapporteur();
+
+    }
+);
+
+
+map.on(
+    "moveend",
+    function() {
+
+        if (A)
+            dessinerRapporteur();
+
+    }
+);
+
+
+map.on(
+    "resize",
+    function() {
+
+        if (A)
+            dessinerRapporteur();
+
+    }
+);
+
+
+/* =========================================================
+   CALCUL DE L'AZIMUT
+   ========================================================= */
+
+function calculerAzimut(
+    A,
+    B
+) {
+
+    const rad =
+        Math.PI / 180;
+
+
+    const deg =
+        180 / Math.PI;
+
+
+    const lat1 =
+        A.lat * rad;
+
+
+    const lat2 =
+        B.lat * rad;
+
+
+    const deltaLon =
+        (B.lng - A.lng) * rad;
+
+
+    const y =
+        Math.sin(deltaLon) *
+        Math.cos(lat2);
+
+
+    const x =
+        Math.cos(lat1) *
+        Math.sin(lat2)
+        -
+        Math.sin(lat1) *
+        Math.cos(lat2) *
+        Math.cos(deltaLon);
+
+
+    let azimut =
+        Math.atan2(
+            y,
+            x
+        ) * deg;
+
+
+    if (azimut < 0)
+        azimut += 360;
+
+
+    /* Degrés / minutes / secondes */
+
+    const d =
+        Math.floor(azimut);
+
+
+    const minDecimal =
+        (azimut - d) * 60;
+
+
+    const m =
+        Math.floor(minDecimal);
+
+
+    const s =
+        (minDecimal - m) * 60;
+
+
+    document.getElementById(
+        "azimut"
+    ).innerHTML =
+        azimut.toFixed(4) +
+        "°<br>" +
+        "<small>" +
+        d +
+        "° " +
+        m +
+        "′ " +
+        s.toFixed(1) +
+        "″" +
+        "</small>";
+
+
+    /* Distance */
+
+    const R =
+        6371000;
+
+
+    const dLat =
+        (B.lat - A.lat) * rad;
+
+
+    const dLon =
+        (B.lng - A.lng) * rad;
+
+
+    const h =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1) *
+        Math.cos(lat2) *
+        Math.sin(dLon / 2) ** 2;
+
+
+    const distance =
+        R *
+        2 *
+        Math.atan2(
+            Math.sqrt(h),
+            Math.sqrt(1 - h)
+        );
+
+
+    document.getElementById(
+        "distance"
+    ).innerHTML =
+        distance.toFixed(2) +
+        " m";
+
+
+    /* Direction */
+
+    let direction;
+
+
+    if (
+        azimut < 22.5 ||
+        azimut >= 337.5
+    )
+        direction = "Nord";
+
+
+    else if (azimut < 67.5)
+        direction = "Nord-Est";
+
+
+    else if (azimut < 112.5)
+        direction = "Est";
+
+
+    else if (azimut < 157.5)
+        direction = "Sud-Est";
+
+
+    else if (azimut < 202.5)
+        direction = "Sud";
+
+
+    else if (azimut < 247.5)
+        direction = "Sud-Ouest";
+
+
+    else if (azimut < 292.5)
+        direction = "Ouest";
+
+
+    else
+        direction = "Nord-Ouest";
+
+
+    document.getElementById(
+        "direction"
+    ).innerHTML =
+        direction;
+}
+
+
+/* =========================================================
+   RÉINITIALISATION
+   ========================================================= */
+
+function resetCarte() {
+
+    if (markerA)
+        map.removeLayer(
+            markerA
+        );
+
+
+    if (markerB)
+        map.removeLayer(
+            markerB
+        );
+
+
+    if (ligne)
+        map.removeLayer(
+            ligne
+        );
+
+
+    if (rapporteur)
+        map.removeLayer(
+            rapporteur
+        );
+
+
+    A = null;
+    B = null;
+
+    markerA = null;
+    markerB = null;
+    ligne = null;
+    rapporteur = null;
+
+
+    document.getElementById(
+        "azimut"
+    ).innerHTML =
+        "—";
+
+
+    document.getElementById(
+        "distance"
+    ).innerHTML =
+        "—";
+
+
+    document.getElementById(
+        "direction"
+    ).innerHTML =
+        "—";
+
+
+    document.getElementById(
+        "coordA"
+    ).innerHTML =
+        "—";
+
+
+    document.getElementById(
+        "coordB"
+    ).innerHTML =
+        "—";
+
+
+    document.getElementById(
+        "message"
+    ).innerHTML =
+        "🔵 Position GPS conservée. Cliquez sur la carte pour placer le <b>point A</b>.";
+}
+
+
+/* =========================================================
+   POSITION AUTOMATIQUE AU DÉMARRAGE
+   ========================================================= */
+
+obtenirPosition();
+
+/* La déclinaison est également demandée dès que la position GPS est connue. */
+
+</script>
+
+</body>
+</html>
