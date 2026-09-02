@@ -2239,7 +2239,7 @@ async function gererOrientationAR(event) {
         : "Visée AR en direct";
 }
 
-function ouvrirAR() {
+async function ouvrirAR() {
     if (!window.isSecureContext) {
         alert("Le mode AR nécessite HTTPS.");
         return;
