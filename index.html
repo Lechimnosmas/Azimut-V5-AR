@@ -236,7 +236,7 @@ button:hover {
 
 
 /* =========================================================
-   V5.7 — MODE AR / AZIMUT
+   V5.9 — MODE AR / AZIMUT
    ========================================================= */
 #arView {
     position: fixed;
@@ -254,19 +254,22 @@ button:hover {
     object-fit:cover;
     background:#000;
 }
-#arHud { position:absolute; inset:0; pointer-events:none; color:white; font-family:Arial,sans-serif; text-shadow:0 1px 4px #000; }
-#arTop { position:absolute; top:env(safe-area-inset-top,12px); left:12px; right:12px; display:flex; justify-content:space-between; align-items:center; pointer-events:auto; }
-#arClose, #arLock { margin:0; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.65); }
+#arHud { position:absolute; z-index:10001; inset:0; pointer-events:none; color:white; font-family:Arial,sans-serif; text-shadow:0 1px 4px #000; }
+#arTop { position:absolute; z-index:10003; top:env(safe-area-inset-top,12px); left:12px; right:12px; display:flex; justify-content:space-between; align-items:center; pointer-events:auto; }
+#arClose, #arLock { position:relative; z-index:10004; pointer-events:auto; margin:0; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.65); }
 #arCompass { position:absolute; top:25%; left:0; right:0; height:90px; overflow:hidden; }
 #arScale { position:absolute; left:50%; top:0; display:flex; align-items:flex-start; white-space:nowrap; font-size:18px; font-weight:bold; transition:transform .08s linear; will-change:transform; }
 .arTick { flex:0 0 40px; width:40px; min-width:40px; box-sizing:border-box; text-align:center; vertical-align:top; }
 .arTick.major { flex-basis:40px; width:40px; min-width:40px; font-size:20px; }
 #arCenter { position:absolute; top:calc(25% - 10px); left:50%; transform:translateX(-50%); font-size:48px; line-height:1; color:#00aaff; }
+#arReport { position:absolute; left:50%; bottom:calc(70px + env(safe-area-inset-bottom)); transform:translateX(-50%); z-index:10004; pointer-events:auto; }
 #arReadout { position:absolute; left:12px; right:12px; bottom:calc(18px + env(safe-area-inset-bottom)); text-align:center; font-size:17px; font-weight:bold; line-height:1.55; }
 #arReport { position:absolute; left:50%; bottom:calc(72px + env(safe-area-inset-bottom)); transform:translateX(-50%); pointer-events:auto; background:rgba(0,0,0,.72); color:white; border:1px solid rgba(255,255,255,.7); border-radius:8px; padding:9px 14px; font-size:15px; }
 #arReport:disabled { opacity:.45; }
-#arReference { position:absolute; top:40%; left:0; right:0; height:2px; background:rgba(255,0,0,.9); transform-origin:center; display:none; }
-#arReferenceLabel { position:absolute; top:calc(40% - 25px); left:50%; transform:translateX(-50%); color:#ff4444; font-weight:bold; white-space:nowrap; display:none; }
+#arLockedSight { position:absolute; top:40%; left:50%; width:3px; height:60%; background:rgba(0,170,255,.95); transform:translateX(-50%); display:none; z-index:10002; box-shadow:0 0 6px rgba(0,170,255,.8); }
+#arLockedLabel { position:absolute; top:calc(40% + 8px); left:50%; transform:translateX(-50%); color:#00aaff; font-weight:bold; white-space:nowrap; display:none; z-index:10002; }
+#arReference { position:absolute; z-index:10002; top:40%; left:0; right:0; height:2px; background:rgba(255,0,0,.9); transform-origin:center; display:none; }
+#arReferenceLabel { position:absolute; z-index:10002; top:calc(40% - 25px); left:50%; transform:translateX(-50%); color:#ff4444; font-weight:bold; white-space:nowrap; display:none; }
 #arStatus { position:absolute; top:calc(25% + 105px); left:0; right:0; text-align:center; font-size:14px; }
 
 </style>
@@ -360,15 +363,16 @@ Recherche de votre position GPS...
   <video id="arVideo" autoplay playsinline muted></video>
   <div id="arHud">
     <div id="arTop">
-      <button id="arClose" onclick="fermerAR()">✕ Fermer</button>
-      <button id="arLock" onclick="verrouillerAR()">🔒 Verrouiller la visée AR</button>
+      <button type="button" id="arClose" onclick="fermerAR()">✕ Fermer</button>
+      <button type="button" id="arLock" onclick="verrouillerAR()">🔒 Verrouiller la visée AR</button>
     </div>
     <div id="arCompass"><div id="arScale"></div></div>
     <div id="arCenter">│</div>
+    <div id="arLockedSight"></div><div id="arLockedLabel"></div>
     <div id="arReference"></div><div id="arReferenceLabel"></div>
     <div id="arStatus">Initialisation de la caméra et de la boussole…</div>
     <div id="arReadout">Azimut : —</div>
-    <button id="arReport" onclick="reporterAzimutARSurCarte(); fermerAR();" disabled>🗺️ Reporter sur la carte</button>
+    <button type="button" id="arReport" onclick="reporterAzimutARSurCarte(); fermerAR();" disabled>🗺️ Reporter sur la carte</button>
   </div>
 </div>
 
@@ -2177,6 +2181,29 @@ function afficherPositionCibleAR() {
     }
 }
 
+function mettreAJourViséeVerrouilleeAR() {
+    const line = document.getElementById("arLockedSight");
+    const label = document.getElementById("arLockedLabel");
+    if (!line || !label) return;
+
+    if (!arVerrouille || azimutARMemorise === null || arCapVrai === null) {
+        line.style.display = "none";
+        label.style.display = "none";
+        return;
+    }
+
+    const ecart = angleSigne(azimutARMemorise - arCapVrai);
+    const position = 50 + (ecart / AR_FOV_HORIZONTAL) * 100;
+    const visible = position >= -5 && position <= 105;
+    line.style.display = visible ? "block" : "none";
+    label.style.display = visible ? "block" : "none";
+    if (visible) {
+        line.style.left = `${position}%`;
+        label.style.left = `${position}%`;
+        label.textContent = `🔵 Visée : ${azimutARMemorise.toFixed(1)}°`;
+    }
+}
+
 function afficherLectureAR() {
     const readout = document.getElementById("arReadout");
     if (!readout) return;
@@ -2195,7 +2222,7 @@ function afficherLectureAR() {
     readout.innerHTML = txt;
 }
 
-async function gererOrientationAR(event) {
+function gererOrientationAR(event) {
     if (!arActive) return;
 
     let heading = event.webkitCompassHeading;
@@ -2214,23 +2241,20 @@ async function gererOrientationAR(event) {
         return;
     }
 
-    // Direction réelle de l'iPhone, déclinaison magnétique incluse.
-    // Cette valeur est indépendante de la cible A→B et peut être mémorisée
-    // par le verrouillage AR.
     arCapVrai = normaliserAngle(heading + dec);
-
-    // L'échelle reste toujours synchronisée avec le mouvement de l'iPhone.
     mettreAJourEchelleAR();
 
-    // La ligne rouge A→B est une référence indépendante. Elle continue à
-    // suivre l'iPhone tant qu'elle n'est pas verrouillée (aucun verrouillage
-    // AR ne doit bloquer la boussole ou l'échelle).
+    // Référence rouge A→B : toujours indépendante.
     if (arAzimutCarte !== null) {
         const ecart = angleSigne(arAzimutCarte - arCapVrai);
         arPositionCiblePct = 50 + (ecart / AR_FOV_HORIZONTAL) * 100;
         afficherPositionCibleAR();
     }
 
+    // Visée AR bleue : avant verrouillage, elle correspond au centre de visée.
+    // Après verrouillage, elle représente la direction mémorisée et se déplace
+    // dans l'image lorsque l'iPhone tourne.
+    mettreAJourViséeVerrouilleeAR();
     afficherLectureAR();
 
     const st = document.getElementById("arStatus");
@@ -2305,6 +2329,7 @@ function verrouillerAR() {
         azimutARMemorise = null;
     }
 
+    mettreAJourViséeVerrouilleeAR();
     afficherLectureAR();
 
     const b = document.getElementById("arLock");
@@ -2340,6 +2365,11 @@ function fermerAR() {
 
     const video = document.getElementById("arVideo");
     if (video) video.srcObject = null;
+
+    const lockedLine = document.getElementById("arLockedSight");
+    const lockedLabel = document.getElementById("arLockedLabel");
+    if (lockedLine) lockedLine.style.display = "none";
+    if (lockedLabel) lockedLabel.style.display = "none";
 
     const view = document.getElementById("arView");
     if (view) view.classList.remove("active");
