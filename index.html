@@ -236,7 +236,7 @@ button:hover {
 
 
 /* =========================================================
-   V5.6 — MODE AR / AZIMUT
+   V5.7 — MODE AR / AZIMUT
    ========================================================= */
 #arView {
     position: fixed;
@@ -2195,7 +2195,51 @@ function afficherLectureAR() {
     readout.innerHTML = txt;
 }
 
-async function ouvrirAR() {
+async function gererOrientationAR(event) {
+    if (!arActive) return;
+
+    let heading = event.webkitCompassHeading;
+    if (typeof heading !== "number" || heading < 0) {
+        if (event.absolute && typeof event.alpha === "number") {
+            heading = normaliserAngle(360 - event.alpha);
+        } else {
+            return;
+        }
+    }
+
+    const dec = declinaison;
+    if (dec === null || dec === undefined) {
+        const st = document.getElementById("arStatus");
+        if (st) st.textContent = "Calcul de la déclinaison magnétique…";
+        return;
+    }
+
+    // Direction réelle de l'iPhone, déclinaison magnétique incluse.
+    // Cette valeur est indépendante de la cible A→B et peut être mémorisée
+    // par le verrouillage AR.
+    arCapVrai = normaliserAngle(heading + dec);
+
+    // L'échelle reste toujours synchronisée avec le mouvement de l'iPhone.
+    mettreAJourEchelleAR();
+
+    // La ligne rouge A→B est une référence indépendante. Elle continue à
+    // suivre l'iPhone tant qu'elle n'est pas verrouillée (aucun verrouillage
+    // AR ne doit bloquer la boussole ou l'échelle).
+    if (arAzimutCarte !== null) {
+        const ecart = angleSigne(arAzimutCarte - arCapVrai);
+        arPositionCiblePct = 50 + (ecart / AR_FOV_HORIZONTAL) * 100;
+        afficherPositionCibleAR();
+    }
+
+    afficherLectureAR();
+
+    const st = document.getElementById("arStatus");
+    if (st) st.textContent = arVerrouille
+        ? "Visée AR verrouillée — azimut mémorisé"
+        : "Visée AR en direct";
+}
+
+function ouvrirAR() {
     if (!window.isSecureContext) {
         alert("Le mode AR nécessite HTTPS.");
         return;
