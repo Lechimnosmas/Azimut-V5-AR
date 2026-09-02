@@ -2074,7 +2074,7 @@ function mettreAJourEchelleAR() {
     const indexZero = 72; // -720° ... 0° ... 1080°, pas de 10°
     const tickWidth = 40;
     const heading = normaliserAngle(arCapVrai);
-    const offset = -(indexZero * tickWidth) + heading * pixelsParDegre;
+    const offset = -(indexZero * tickWidth) - heading * pixelsParDegre;
     scale.style.transform = `translateX(calc(-50% + ${offset}px))`;
 }
 
