@@ -258,7 +258,7 @@ button:hover {
 #arTop { position:absolute; top:env(safe-area-inset-top,12px); left:12px; right:12px; display:flex; justify-content:space-between; align-items:center; pointer-events:auto; }
 #arClose, #arLock { margin:0; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.65); }
 #arCompass { position:absolute; top:25%; left:0; right:0; height:90px; overflow:hidden; }
-#arScale { position:absolute; left:50%; top:0; transform:translateX(-50%); white-space:nowrap; font-size:18px; font-weight:bold; transition:transform .08s linear; }
+#arScale { position:absolute; left:50%; top:0; white-space:nowrap; font-size:18px; font-weight:bold; transition:transform .08s linear; will-change:transform; }
 .arTick { display:inline-block; width:30px; text-align:center; vertical-align:top; }
 .arTick.major { width:60px; font-size:20px; }
 #arCenter { position:absolute; top:calc(25% - 10px); left:50%; transform:translateX(-50%); font-size:48px; line-height:1; color:#00aaff; }
@@ -2047,7 +2047,9 @@ function construireEchelleAR() {
     const scale = document.getElementById("arScale");
     if (!scale) return;
     let h = "";
-    for (let a = -360; a <= 720; a += 10) {
+    // Une graduation tous les 10°. Espacement constant afin que l'échelle
+    // puisse défiler exactement avec l'azimut de l'iPhone.
+    for (let a = -720; a <= 1080; a += 10) {
         const n = normaliserAngle(a);
         let label = n + "°";
         if (n === 0) label = "N";
@@ -2055,9 +2057,19 @@ function construireEchelleAR() {
         else if (n === 180) label = "S";
         else if (n === 270) label = "O";
         const major = n % 30 === 0;
-        h += `<span class="arTick ${major ? 'major' : ''}">${label}</span>`;
+        h += `<span class="arTick ${major ? 'major' : ''}" style="width:40px">${label}</span>`;
     }
     scale.innerHTML = h;
+}
+
+function mettreAJourEchelleAR() {
+    const scale = document.getElementById("arScale");
+    if (!scale || arCapVrai === null) return;
+    // Le centre bleu représente le cap actuel. L'échelle défile donc
+    // sous ce repère : N/E/S/O se déplacent réellement lorsque l'iPhone tourne.
+    const pixelsParDegre = 40 / 10;
+    const offset = -normaliserAngle(arCapVrai) * pixelsParDegre;
+    scale.style.transform = `translateX(calc(-50% + ${offset}px))`;
 }
 
 function mettreAJourCibleAR() {
@@ -2144,6 +2156,7 @@ function gererOrientationAR(event) {
     // L'orientation sert à savoir où placer la cible GPS A→B dans la caméra.
     // La cible elle-même reste toujours l'azimut carte.
     arCapVrai = normaliserAngle(heading + dec);
+    mettreAJourEchelleAR();
 
     if (!arVerrouille && arAzimutCarte !== null) {
         const ecart = angleSigne(arAzimutCarte - arCapVrai);
