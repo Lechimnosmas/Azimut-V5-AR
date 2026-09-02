@@ -258,9 +258,9 @@ button:hover {
 #arTop { position:absolute; top:env(safe-area-inset-top,12px); left:12px; right:12px; display:flex; justify-content:space-between; align-items:center; pointer-events:auto; }
 #arClose, #arLock { margin:0; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.65); }
 #arCompass { position:absolute; top:25%; left:0; right:0; height:90px; overflow:hidden; }
-#arScale { position:absolute; left:50%; top:0; white-space:nowrap; font-size:18px; font-weight:bold; transition:transform .08s linear; will-change:transform; }
-.arTick { display:inline-block; width:30px; text-align:center; vertical-align:top; }
-.arTick.major { width:60px; font-size:20px; }
+#arScale { position:absolute; left:50%; top:0; display:flex; align-items:flex-start; white-space:nowrap; font-size:18px; font-weight:bold; transition:transform .08s linear; will-change:transform; }
+.arTick { flex:0 0 40px; width:40px; min-width:40px; box-sizing:border-box; text-align:center; vertical-align:top; }
+.arTick.major { flex-basis:40px; width:40px; min-width:40px; font-size:20px; }
 #arCenter { position:absolute; top:calc(25% - 10px); left:50%; transform:translateX(-50%); font-size:48px; line-height:1; color:#00aaff; }
 #arReadout { position:absolute; left:12px; right:12px; bottom:calc(18px + env(safe-area-inset-bottom)); text-align:center; font-size:17px; font-weight:bold; line-height:1.55; }
 #arReference { position:absolute; top:40%; left:0; right:0; height:2px; background:rgba(255,0,0,.9); transform-origin:center; display:none; }
@@ -2049,7 +2049,7 @@ function construireEchelleAR() {
     let h = "";
     // Une graduation tous les 10°. Espacement constant afin que l'échelle
     // puisse défiler exactement avec l'azimut de l'iPhone.
-    for (let a = -720; a <= 1080; a += 10) {
+    for (let a = -720; a <= 720; a += 10) {
         const n = normaliserAngle(a);
         let label = n + "°";
         if (n === 0) label = "N";
@@ -2057,7 +2057,7 @@ function construireEchelleAR() {
         else if (n === 180) label = "S";
         else if (n === 270) label = "O";
         const major = n % 30 === 0;
-        h += `<span class="arTick ${major ? 'major' : ''}" style="width:40px">${label}</span>`;
+        h += `<span class="arTick ${major ? 'major' : ''}">${label}</span>`;
     }
     scale.innerHTML = h;
 }
@@ -2068,13 +2068,12 @@ function mettreAJourEchelleAR() {
     // Le centre bleu représente le cap actuel. L'échelle défile donc
     // sous ce repère : N/E/S/O se déplacent réellement lorsque l'iPhone tourne.
     const pixelsParDegre = 40 / 10;
-    // Le zéro de l'échelle est le 0e degré du tableau (a = 0).
-    // On le place d'abord au centre, puis on fait défiler l'échelle
-    // de +4 px par degré lorsque le cap augmente.
-    const indexZero = 72; // -720° ... 0° ... 1080°, pas de 10°
-    const tickWidth = 40;
+    // Échelle symétrique : -720° ... 0° ... +720°.
+    // Le 0° est exactement au centre de l'échelle.
+    // Quand le cap augmente vers l'Est, l'échelle se déplace vers la gauche
+    // afin que la graduation correspondant au cap arrive sous le repère bleu.
     const heading = normaliserAngle(arCapVrai);
-    const offset = -(indexZero * tickWidth) - heading * pixelsParDegre;
+    const offset = -heading * pixelsParDegre;
     scale.style.transform = `translateX(calc(-50% + ${offset}px))`;
 }
 
