@@ -2068,7 +2068,13 @@ function mettreAJourEchelleAR() {
     // Le centre bleu représente le cap actuel. L'échelle défile donc
     // sous ce repère : N/E/S/O se déplacent réellement lorsque l'iPhone tourne.
     const pixelsParDegre = 40 / 10;
-    const offset = -normaliserAngle(arCapVrai) * pixelsParDegre;
+    // Le zéro de l'échelle est le 0e degré du tableau (a = 0).
+    // On le place d'abord au centre, puis on fait défiler l'échelle
+    // de +4 px par degré lorsque le cap augmente.
+    const indexZero = 72; // -720° ... 0° ... 1080°, pas de 10°
+    const tickWidth = 40;
+    const heading = normaliserAngle(arCapVrai);
+    const offset = -(indexZero * tickWidth) + heading * pixelsParDegre;
     scale.style.transform = `translateX(calc(-50% + ${offset}px))`;
 }
 
