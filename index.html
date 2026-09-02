@@ -236,7 +236,7 @@ button:hover {
 
 
 /* =========================================================
-   V5 — MODE AR / AZIMUT
+   V5.6 — MODE AR / AZIMUT
    ========================================================= */
 #arView {
     position: fixed;
@@ -263,6 +263,8 @@ button:hover {
 .arTick.major { flex-basis:40px; width:40px; min-width:40px; font-size:20px; }
 #arCenter { position:absolute; top:calc(25% - 10px); left:50%; transform:translateX(-50%); font-size:48px; line-height:1; color:#00aaff; }
 #arReadout { position:absolute; left:12px; right:12px; bottom:calc(18px + env(safe-area-inset-bottom)); text-align:center; font-size:17px; font-weight:bold; line-height:1.55; }
+#arReport { position:absolute; left:50%; bottom:calc(72px + env(safe-area-inset-bottom)); transform:translateX(-50%); pointer-events:auto; background:rgba(0,0,0,.72); color:white; border:1px solid rgba(255,255,255,.7); border-radius:8px; padding:9px 14px; font-size:15px; }
+#arReport:disabled { opacity:.45; }
 #arReference { position:absolute; top:40%; left:0; right:0; height:2px; background:rgba(255,0,0,.9); transform-origin:center; display:none; }
 #arReferenceLabel { position:absolute; top:calc(40% - 25px); left:50%; transform:translateX(-50%); color:#ff4444; font-weight:bold; white-space:nowrap; display:none; }
 #arStatus { position:absolute; top:calc(25% + 105px); left:0; right:0; text-align:center; font-size:14px; }
@@ -299,6 +301,11 @@ Recherche de votre position GPS...
 <div id="differenceValue" style="display:none;">
 <div class="label">Différence</div>
 <div class="value" id="differenceAzimut">—</div>
+</div>
+
+<div id="azimutARValueBlock" style="display:none;">
+<div class="label">Visée AR mémorisée</div>
+<div class="value" id="azimutARValue">—</div>
 </div>
 
 <div>
@@ -343,6 +350,8 @@ Recherche de votre position GPS...
 
 <button onclick="ouvrirAR()">📷 AR + Azimut</button>
 
+<button id="arReportMapButton" onclick="reporterAzimutARSurCarte()" style="display:none;">🗺️ Reporter la visée AR sur la carte</button>
+
 </div>
 
 
@@ -352,13 +361,14 @@ Recherche de votre position GPS...
   <div id="arHud">
     <div id="arTop">
       <button id="arClose" onclick="fermerAR()">✕ Fermer</button>
-      <button id="arLock" onclick="verrouillerAR()">🔒 Verrouiller la visée</button>
+      <button id="arLock" onclick="verrouillerAR()">🔒 Verrouiller la visée AR</button>
     </div>
     <div id="arCompass"><div id="arScale"></div></div>
     <div id="arCenter">│</div>
     <div id="arReference"></div><div id="arReferenceLabel"></div>
     <div id="arStatus">Initialisation de la caméra et de la boussole…</div>
     <div id="arReadout">Azimut : —</div>
+    <button id="arReport" onclick="reporterAzimutARSurCarte(); fermerAR();" disabled>🗺️ Reporter sur la carte</button>
   </div>
 </div>
 
@@ -519,6 +529,10 @@ let azimutViseeMagnetique = null;
 let azimutViseeGeographique = null;
 let azimutVerrouilleBoussole = null;
 let differenceVerrouillee = null;
+
+// Azimut mémorisé indépendamment par le mode AR.
+let azimutARMemorise = null;
+let ligneViseeAR = null;
 
 function normaliserAngle(angle) {
     return (angle % 360 + 360) % 360;
@@ -1934,6 +1948,37 @@ function calculerAzimut(
    RÉINITIALISATION
    ========================================================= */
 
+function reporterAzimutARSurCarte() {
+    if (azimutARMemorise === null) {
+        alert("Aucune visée AR n’est mémorisée. Verrouillez d’abord une visée dans le mode AR.");
+        return;
+    }
+    if (!A) {
+        alert("Définissez d’abord le point A pour afficher la visée AR sur la carte.");
+        return;
+    }
+
+    const distance = 1000000;
+    const fin = destination(A, azimutARMemorise, distance);
+
+    if (ligneViseeAR) {
+        map.removeLayer(ligneViseeAR);
+    }
+    ligneViseeAR = L.polyline(
+        [A, fin],
+        { color: "#0066ff", weight: 5, opacity: 0.95, dashArray: "12 8", interactive: false }
+    ).addTo(map);
+
+    const el = document.getElementById("azimutARValue");
+    if (el) el.innerHTML = azimutARMemorise.toFixed(4) + "°";
+    const block = document.getElementById("azimutARValueBlock");
+    if (block) block.style.display = "block";
+    const mapBtn = document.getElementById("arReportMapButton");
+    if (mapBtn) mapBtn.style.display = "none";
+
+    map.setView(A, map.getZoom());
+}
+
 function resetCarte() {
 
     if (markerA)
@@ -1963,6 +2008,11 @@ function resetCarte() {
         map.removeLayer(ligneVisee);
         ligneVisee = null;
     }
+    if (ligneViseeAR) {
+        map.removeLayer(ligneViseeAR);
+        ligneViseeAR = null;
+    }
+    azimutARMemorise = null;
 
 
     A = null;
@@ -1984,6 +2034,12 @@ function resetCarte() {
         "—";
 
     document.getElementById("azimutBoussole").innerHTML = "—";
+    const arBlock = document.getElementById("azimutARValueBlock");
+    if (arBlock) arBlock.style.display = "none";
+    const arVal = document.getElementById("azimutARValue");
+    if (arVal) arVal.innerHTML = "—";
+    const mapBtn = document.getElementById("arReportMapButton");
+    if (mapBtn) mapBtn.style.display = "none";
     document.getElementById("differenceAzimut").innerHTML = "—";
     document.getElementById("compassValues").style.display = "none";
     document.getElementById("differenceValue").style.display = "none";
@@ -2106,11 +2162,9 @@ function afficherPositionCibleAR() {
     const label = document.getElementById("arReferenceLabel");
     if (!line || !label || arAzimutCarte === null) return;
 
-    const position = arVerrouille && arPositionVerrouilleePct !== null
-        ? arPositionVerrouilleePct
-        : arPositionCiblePct;
+    // La référence rouge A→B reste indépendante du verrouillage de la visée AR.
+    const position = arPositionCiblePct;
 
-    // Position du repère dans l'image. Hors champ : on le cache.
     const visible = position >= -5 && position <= 105;
     line.style.display = visible ? "block" : "none";
     label.style.display = visible ? "block" : "none";
@@ -2127,52 +2181,18 @@ function afficherLectureAR() {
     const readout = document.getElementById("arReadout");
     if (!readout) return;
 
-    const cible = arAzimutCarte;
-    let txt = `Azimut carte : ${cible === null ? "—" : cible.toFixed(1) + "°"}`;
+    let txt = `Azimut carte A → B : ${arAzimutCarte === null ? "—" : arAzimutCarte.toFixed(1) + "°"}`;
     if (arCapVrai !== null) {
         txt += `<br>Azimut boussole : ${arCapVrai.toFixed(1)}°`;
-        if (cible !== null) {
-            arDifference = angleSigne(arCapVrai - cible);
-            txt += `<br>Différence : ${arDifference >= 0 ? "+" : ""}${arDifference.toFixed(1)}°`;
-        }
+    }
+    if (arAzimutCarte !== null && arCapVrai !== null) {
+        arDifference = angleSigne(arCapVrai - arAzimutCarte);
+        txt += `<br>Différence : ${arDifference >= 0 ? "+" : ""}${arDifference.toFixed(1)}°`;
+    }
+    if (arVerrouille && azimutARMemorise !== null) {
+        txt += `<br><span style="color:#4da6ff">🔵 Visée AR mémorisée : ${azimutARMemorise.toFixed(1)}°</span>`;
     }
     readout.innerHTML = txt;
-}
-
-function gererOrientationAR(event) {
-    if (!arActive) return;
-
-    let heading = event.webkitCompassHeading;
-    if (typeof heading !== "number" || heading < 0) {
-        if (event.absolute && typeof event.alpha === "number") {
-            heading = normaliserAngle(360 - event.alpha);
-        } else {
-            return;
-        }
-    }
-
-    const dec = declinaison;
-    if (dec === null || dec === undefined) {
-        const st = document.getElementById("arStatus");
-        if (st) st.textContent = "Calcul de la déclinaison magnétique…";
-        return;
-    }
-
-    // L'orientation sert à savoir où placer la cible GPS A→B dans la caméra.
-    // La cible elle-même reste toujours l'azimut carte.
-    arCapVrai = normaliserAngle(heading + dec);
-    mettreAJourEchelleAR();
-
-    if (!arVerrouille && arAzimutCarte !== null) {
-        const ecart = angleSigne(arAzimutCarte - arCapVrai);
-        arPositionCiblePct = 50 + (ecart / AR_FOV_HORIZONTAL) * 100;
-        afficherPositionCibleAR();
-    }
-
-    afficherLectureAR();
-
-    const st = document.getElementById("arStatus");
-    if (st) st.textContent = arVerrouille ? "Visée GPS verrouillée" : "Visée GPS en direct";
 }
 
 async function ouvrirAR() {
@@ -2211,8 +2231,10 @@ async function ouvrirAR() {
 
         const st = document.getElementById("arStatus");
         if (st) st.textContent = arAzimutCarte === null
-            ? "Définissez A et B pour afficher la visée GPS."
-            : "Orientez l’iPhone vers la visée GPS…";
+            ? "Visée AR en direct — A→B optionnel."
+            : "Visée AR en direct — rouge = A→B, bleu = votre direction.";
+        const report = document.getElementById("arReport");
+        if (report) report.disabled = true;
 
         window.addEventListener("deviceorientation", gererOrientationAR, true);
         window.addEventListener("deviceorientationabsolute", gererOrientationAR, true);
@@ -2224,31 +2246,35 @@ async function ouvrirAR() {
 }
 
 function verrouillerAR() {
-    if (arAzimutCarte === null) {
-        alert("Définissez d’abord les points A et B pour verrouiller la visée GPS.");
+    if (arCapVrai === null) {
+        alert("L’azimut de la boussole n’est pas encore disponible. Orientez l’iPhone et réessayez.");
         return;
     }
 
     if (!arVerrouille) {
-        // Le verrouillage AR porte sur la cible GPS A→B : sa position à l'écran
-        // est mémorisée. L'azimut boussole continue à se mettre à jour.
-        arPositionVerrouilleePct = arPositionCiblePct;
+        // La visée AR mémorise la direction réelle de l’iPhone, indépendamment
+        // de la cible rouge A→B et du verrouillage de la carte.
+        azimutARMemorise = arCapVrai;
         arVerrouille = true;
     } else {
         arVerrouille = false;
-        arPositionVerrouilleePct = null;
+        azimutARMemorise = null;
     }
 
-    afficherPositionCibleAR();
     afficherLectureAR();
 
     const b = document.getElementById("arLock");
     if (b) b.textContent = arVerrouille
-        ? "🔓 Déverrouiller la visée"
-        : "🔒 Verrouiller la visée";
+        ? "🔓 Déverrouiller la visée AR"
+        : "🔒 Verrouiller la visée AR";
+
+    const report = document.getElementById("arReport");
+    if (report) report.disabled = !arVerrouille;
+    const mapBtn = document.getElementById("arReportMapButton");
+    if (mapBtn) mapBtn.style.display = arVerrouille ? "block" : "none";
 
     const st = document.getElementById("arStatus");
-    if (st) st.textContent = arVerrouille ? "Visée GPS verrouillée" : "Visée GPS en direct";
+    if (st) st.textContent = arVerrouille ? "Visée AR verrouillée — azimut mémorisé" : "Visée AR en direct";
 }
 
 function fermerAR() {
