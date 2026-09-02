@@ -6,7 +6,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>Azimut V5 - AR</title>
+<title>Azimut - OpenStreetMap</title>
 
 <link rel="stylesheet"
 href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -236,30 +236,36 @@ button:hover {
 
 
 /* =========================================================
-   MODE AR — caméra + échelle d'azimut
+   V5 — MODE AR / AZIMUT
    ========================================================= */
 #arView {
-    position: fixed; inset: 0; z-index: 99999;
-    background: #000; display: none; overflow: hidden;
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 10000;
+    display: none;
+    overflow: hidden;
 }
+#arView.active { display:block; }
 #arVideo {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    object-fit: cover; background: #000;
+    position:absolute;
+    inset:0;
+    width:100%; height:100%;
+    object-fit:cover;
+    background:#000;
 }
-#arOverlay { position:absolute; inset:0; color:white; pointer-events:none; font-family:Arial,sans-serif; }
-#arClose { position:absolute; top:calc(env(safe-area-inset-top) + 12px); right:12px; z-index:2; pointer-events:auto; margin:0; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.7); }
-#arTop { position:absolute; top:calc(env(safe-area-inset-top) + 14px); left:14px; right:80px; text-shadow:0 1px 3px #000; }
-#arHeading { font-size:30px; font-weight:bold; }
-#arInfo { font-size:15px; line-height:1.35; margin-top:5px; }
-#arHorizon { position:absolute; left:0; right:0; top:50%; border-top:2px solid rgba(255,255,255,.75); }
-#arCenter { position:absolute; left:50%; top:50%; width:0; height:70px; border-left:3px solid #0066ff; transform:translateX(-50%); }
-#arCenterLabel { position:absolute; left:50%; top:calc(50% + 42px); transform:translateX(-50%); white-space:nowrap; background:rgba(0,0,0,.6); padding:4px 8px; border-radius:5px; font-weight:bold; }
-#arScale { position:absolute; left:0; right:0; top:calc(50% - 42px); height:42px; overflow:hidden; }
-.arTick { position:absolute; bottom:0; width:1px; background:rgba(255,255,255,.9); }
-.arTick.major { height:22px; width:2px; }
-.arTick.minor { height:10px; }
-.arTickLabel { position:absolute; bottom:25px; transform:translateX(-50%); font-size:13px; font-weight:bold; text-shadow:0 1px 3px #000; white-space:nowrap; }
-#arCardinal { position:absolute; left:50%; top:calc(50% - 82px); transform:translateX(-50%); font-size:18px; font-weight:bold; color:#fff; text-shadow:0 1px 4px #000; }
+#arHud { position:absolute; inset:0; pointer-events:none; color:white; font-family:Arial,sans-serif; text-shadow:0 1px 4px #000; }
+#arTop { position:absolute; top:env(safe-area-inset-top,12px); left:12px; right:12px; display:flex; justify-content:space-between; align-items:center; pointer-events:auto; }
+#arClose, #arLock { margin:0; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.65); }
+#arCompass { position:absolute; top:25%; left:0; right:0; height:90px; overflow:hidden; }
+#arScale { position:absolute; left:50%; top:0; transform:translateX(-50%); white-space:nowrap; font-size:18px; font-weight:bold; transition:transform .08s linear; }
+.arTick { display:inline-block; width:30px; text-align:center; vertical-align:top; }
+.arTick.major { width:60px; font-size:20px; }
+#arCenter { position:absolute; top:calc(25% - 10px); left:50%; transform:translateX(-50%); font-size:48px; line-height:1; color:#00aaff; }
+#arReadout { position:absolute; left:12px; right:12px; bottom:calc(18px + env(safe-area-inset-bottom)); text-align:center; font-size:17px; font-weight:bold; line-height:1.55; }
+#arReference { position:absolute; top:40%; left:0; right:0; height:2px; background:rgba(255,0,0,.9); transform-origin:center; display:none; }
+#arReferenceLabel { position:absolute; top:calc(40% - 25px); left:50%; transform:translateX(-50%); color:#ff4444; font-weight:bold; white-space:nowrap; display:none; }
+#arStatus { position:absolute; top:calc(25% + 105px); left:0; right:0; text-align:center; font-size:14px; }
 
 </style>
 
@@ -334,28 +340,25 @@ Recherche de votre position GPS...
 <button id="lockButton" onclick="verrouillerVisee()" style="display:none;">
 🔒 Verrouiller la visée
 </button>
-<button id="arButton" onclick="ouvrirAR()">
-🔭 AR — Azimuts
-</button>
 
+<button onclick="ouvrirAR()">📷 AR + Azimut</button>
 
 </div>
 
 
 
-<div id="arView">
-  <video id="arVideo" playsinline muted autoplay></video>
-  <div id="arOverlay">
-    <button id="arClose" onclick="fermerAR()">✕ Fermer</button>
+<div id="arView" aria-hidden="true">
+  <video id="arVideo" autoplay playsinline muted></video>
+  <div id="arHud">
     <div id="arTop">
-      <div id="arHeading">AR — —°</div>
-      <div id="arInfo">Initialisation de la boussole…</div>
+      <button id="arClose" onclick="fermerAR()">✕ Fermer</button>
+      <button id="arLock" onclick="verrouillerAR()">🔒 Verrouiller</button>
     </div>
-    <div id="arScale"></div>
-    <div id="arCardinal">—</div>
-    <div id="arHorizon"></div>
-    <div id="arCenter"></div>
-    <div id="arCenterLabel">—°</div>
+    <div id="arCompass"><div id="arScale"></div></div>
+    <div id="arCenter">│</div>
+    <div id="arReference"></div><div id="arReferenceLabel"></div>
+    <div id="arStatus">Initialisation de la caméra et de la boussole…</div>
+    <div id="arReadout">Azimut : —</div>
   </div>
 </div>
 
@@ -2011,101 +2014,137 @@ function resetCarte() {
 
 
 /* =========================================================
-   V5 — MODE AR AZIMUTS
+   V5 — MODE AR + AZIMUT
    ========================================================= */
-let arActive = false;
 let arStream = null;
-let arCapMagnetique = null;
-let arCapVrai = null;
+let arActive = false;
+let arVerrouille = false;
+let arAzimut = null;
+let arDeclinaisonLocale = null;
 
-async function ouvrirAR() {
-    if (!window.isSecureContext) { alert("Le mode AR nécessite une page HTTPS."); return; }
-    try {
-        if (typeof DeviceOrientationEvent !== "undefined" &&
-            typeof DeviceOrientationEvent.requestPermission === "function") {
-            const permission = await DeviceOrientationEvent.requestPermission();
-            if (permission !== "granted") { alert("Autorisez l’orientation pour utiliser les azimuts AR."); return; }
+function construireEchelleAR() {
+    const scale = document.getElementById("arScale");
+    if (!scale) return;
+    let h = "";
+    for (let a = -720; a <= 720; a += 10) {
+        const n = normaliserAngle(a);
+        let label = n + "°";
+        if (n === 0) label = "N";
+        else if (n === 90) label = "E";
+        else if (n === 180) label = "S";
+        else if (n === 270) label = "O";
+        const major = n % 30 === 0;
+        h += `<span class="arTick ${major ? 'major' : ''}">${label}</span>`;
+    }
+    scale.innerHTML = h;
+}
+
+function majAR(azimut) {
+    if (!arActive || azimut === null || arVerrouille) return;
+    arAzimut = normaliserAngle(azimut);
+    const scale = document.getElementById("arScale");
+    const readout = document.getElementById("arReadout");
+    const status = document.getElementById("arStatus");
+    if (scale) {
+        // 30 px par graduation de 10° : le repère central reste la visée actuelle.
+        scale.style.transform = `translateX(calc(-50% - ${arAzimut * 3}px))`;
+    }
+    if (readout) {
+        let txt = `Azimut boussole : ${arAzimut.toFixed(1)}°`;
+        const azCarte = (A && B) ? calculerAzimutValeur(A, B) : null;
+        if (azCarte !== null) {
+            const diff = angleSigne(arAzimut - azCarte);
+            txt += `<br>Azimut carte : ${azCarte.toFixed(1)}° · Différence : ${diff >= 0 ? '+' : ''}${diff.toFixed(1)}°`;
         }
-        const video = document.getElementById("arVideo");
-        arStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: "environment" } }, audio: false
-        });
-        video.srcObject = arStream;
-        document.getElementById("arView").style.display = "block";
-        arActive = true;
-        window.addEventListener("deviceorientation", gererOrientationAR, true);
-        window.addEventListener("deviceorientationabsolute", gererOrientationAR, true);
-        dessinerEchelleAR();
-    } catch (e) {
-        alert("Impossible d’ouvrir la caméra. Autorisez la caméra pour ce site dans Safari.");
-        fermerAR();
+        readout.innerHTML = txt;
+    }
+    if (status) status.textContent = arVerrouille ? "Visée verrouillée" : "Visée en direct";
+    afficherRepereCarteAR();
+}
+
+function afficherRepereCarteAR() {
+    const line = document.getElementById("arReference");
+    const label = document.getElementById("arReferenceLabel");
+    const azCarte = (A && B) ? calculerAzimutValeur(A, B) : null;
+    if (azCarte === null || arAzimut === null) {
+        if (line) line.style.display = "none";
+        if (label) label.style.display = "none";
+        return;
+    }
+    const diff = angleSigne(azCarte - arAzimut);
+    // Le repère rouge indique la direction A→B dans le champ AR approximatif.
+    if (Math.abs(diff) > 55) {
+        line.style.display = "none"; label.style.display = "none";
+    } else {
+        line.style.display = "block"; label.style.display = "block";
+        const x = 50 + diff * 0.75;
+        line.style.left = `${x - 10}%`; line.style.right = `${100 - (x + 10)}%`;
+        label.style.left = `${x}%`;
+        label.textContent = `Azimut carte ${azCarte.toFixed(1)}°`;
     }
 }
 
-function fermerAR() {
-    arActive = false;
-    window.removeEventListener("deviceorientation", gererOrientationAR, true);
-    window.removeEventListener("deviceorientationabsolute", gererOrientationAR, true);
-    if (arStream) { arStream.getTracks().forEach(t => t.stop()); arStream = null; }
-    const video = document.getElementById("arVideo");
-    if (video) video.srcObject = null;
-    document.getElementById("arView").style.display = "none";
-}
-
 function gererOrientationAR(event) {
-    if (!arActive) return;
+    if (!arActive || arVerrouille) return;
     let heading = event.webkitCompassHeading;
     if (typeof heading !== "number" || heading < 0) {
         if (event.absolute && typeof event.alpha === "number") heading = normaliserAngle(360 - event.alpha);
         else return;
     }
-    arCapMagnetique = normaliserAngle(heading);
-    arCapVrai = declinaison !== null ? normaliserAngle(arCapMagnetique + declinaison) : arCapMagnetique;
-    mettreAJourAR();
-}
-
-function mettreAJourAR() {
-    if (arCapVrai === null) return;
-    const centre = viseeVerrouillee && azimutVerrouilleBoussole !== null ? azimutVerrouilleBoussole : arCapVrai;
-    const carte = obtenirAzimutCarte();
-    document.getElementById("arHeading").textContent = `AR — ${centre.toFixed(1)}°`;
-    document.getElementById("arCenterLabel").textContent = `${centre.toFixed(1)}°`;
-    document.getElementById("arCardinal").textContent = directionDepuisAzimut(centre);
-    let info = `Azimut boussole : ${centre.toFixed(2)}°`;
-    if (declinaison !== null) info += ` · décl. ${declinaison >= 0 ? "+" : ""}${declinaison.toFixed(1)}°`;
-    if (carte !== null) {
-        const diff = angleSigne(centre - carte);
-        info += `<br>Azimut carte : ${carte.toFixed(2)}° · différence : ${diff >= 0 ? "+" : ""}${diff.toFixed(2)}°`;
+    const magnetique = normaliserAngle(heading);
+    const dec = declinaison !== null ? declinaison : arDeclinaisonLocale;
+    if (dec === null || dec === undefined) {
+        const st = document.getElementById("arStatus");
+        if (st) st.textContent = "Calcul de la déclinaison magnétique…";
+        return;
     }
-    document.getElementById("arInfo").innerHTML = info;
-    dessinerEchelleAR();
+    majAR(normaliserAngle(magnetique + dec));
 }
 
-function obtenirAzimutCarte() {
-    if (!A || !B) return null;
-    const rad = Math.PI / 180;
-    const lat1 = A.lat * rad, lat2 = B.lat * rad, dLon = (B.lng - A.lng) * rad;
-    const y = Math.sin(dLon) * Math.cos(lat2);
-    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-    return normaliserAngle(Math.atan2(y, x) * 180 / Math.PI);
-}
-
-function dessinerEchelleAR() {
-    const scale = document.getElementById("arScale");
-    if (!scale || arCapVrai === null) return;
-    const centre = viseeVerrouillee && azimutVerrouilleBoussole !== null ? azimutVerrouilleBoussole : arCapVrai;
-    const largeur = window.innerWidth;
-    const degresParEcran = 70;
-    let html = "";
-    for (let offset = -40; offset <= 40; offset += 5) {
-        const angle = normaliserAngle(centre + offset);
-        const x = 50 + (offset / degresParEcran) * 100;
-        if (x < 0 || x > 100) continue;
-        const major = offset % 10 === 0;
-        html += `<div class="arTick ${major ? "major" : "minor"}" style="left:${x}%"></div>`;
-        if (major) html += `<div class="arTickLabel" style="left:${x}%">${Math.round(angle)}°</div>`;
+async function ouvrirAR() {
+    if (!window.isSecureContext) { alert("Le mode AR nécessite HTTPS."); return; }
+    const view = document.getElementById("arView");
+    const video = document.getElementById("arVideo");
+    try {
+        if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
+            const p = await DeviceOrientationEvent.requestPermission(true);
+            if (p !== "granted") throw new Error("Orientation refusée");
+        }
+        arStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}, audio:false});
+        video.srcObject = arStream;
+        arActive = true; arVerrouille = false; arAzimut = null;
+        construireEchelleAR();
+        view.classList.add("active");
+        document.getElementById("arStatus").textContent = "Orientez l’iPhone…";
+        if (declinaison !== null) arDeclinaisonLocale = declinaison;
+        else if (positionMarker) {
+            const p = positionMarker.getLatLng();
+            mettreAJourDeclinaison(p.lat,p.lng).then(()=>{ arDeclinaisonLocale=declinaison; });
+        }
+        window.addEventListener("deviceorientation", gererOrientationAR, true);
+        window.addEventListener("deviceorientationabsolute", gererOrientationAR, true);
+    } catch (e) {
+        fermerAR();
+        alert("Impossible d’ouvrir le mode AR. Vérifiez les autorisations Caméra et Mouvement et orientation.");
     }
-    scale.innerHTML = html;
+}
+
+function verrouillerAR() {
+    if (arAzimut === null) return;
+    arVerrouille = !arVerrouille;
+    const b = document.getElementById("arLock");
+    if (b) b.textContent = arVerrouille ? "🔓 Déverrouiller" : "🔒 Verrouiller";
+    const st = document.getElementById("arStatus");
+    if (st) st.textContent = arVerrouille ? "Visée verrouillée" : "Visée en direct";
+}
+
+function fermerAR() {
+    arActive = false; arVerrouille = false;
+    window.removeEventListener("deviceorientation", gererOrientationAR, true);
+    window.removeEventListener("deviceorientationabsolute", gererOrientationAR, true);
+    if (arStream) { arStream.getTracks().forEach(t=>t.stop()); arStream=null; }
+    const video = document.getElementById("arVideo"); if (video) video.srcObject = null;
+    const view = document.getElementById("arView"); if (view) view.classList.remove("active");
 }
 
 
