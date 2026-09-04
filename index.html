@@ -236,7 +236,7 @@ button:hover {
 
 
 /* =========================================================
-   V5.10 — MODE AR / AZIMUT + ZOOM 1× / 2× / 4×
+   V5.13 — MODE AR / AZIMUT + ZOOM 1× / 2× / 4× + DIAGNOSTIC
    ========================================================= */
 #arView {
     position: fixed;
@@ -278,6 +278,9 @@ button:hover {
 #arReference { position:absolute; z-index:10002; top:40%; left:0; right:0; height:2px; background:rgba(255,0,0,.9); transform-origin:center; display:none; }
 #arReferenceLabel { position:absolute; z-index:10002; top:calc(40% - 25px); left:50%; transform:translateX(-50%); color:#ff4444; font-weight:bold; white-space:nowrap; display:none; }
 #arStatus { position:absolute; top:calc(25% + 105px); left:0; right:0; text-align:center; font-size:14px; }
+#arDiagnostic { position:absolute; left:10px; right:10px; top:calc(env(safe-area-inset-top, 12px) + 105px); max-height:52vh; overflow:auto; z-index:10006; display:none; background:rgba(0,0,0,.88); color:#fff; border:1px solid rgba(255,255,255,.7); border-radius:10px; padding:12px; font:12px/1.45 monospace; pointer-events:auto; white-space:pre-wrap; }
+#arDiagnostic.active { display:block; }
+#arDiagClose { float:right; margin:0 0 8px 8px; background:rgba(255,255,255,.15); color:#fff; border:1px solid rgba(255,255,255,.7); border-radius:6px; padding:4px 8px; }
 
 </style>
 
@@ -371,7 +374,10 @@ Recherche de votre position GPS...
   <div id="arHud">
     <div id="arTop">
       <button type="button" id="arClose" onclick="fermerAR()">✕ Fermer</button>
-      <button type="button" id="arLock" onclick="verrouillerAR()">🔒 Verrouiller la visée AR</button>
+      <div style="display:flex;gap:6px;align-items:center;pointer-events:auto;">
+        <button type="button" id="arDiagButton" onclick="afficherDiagnosticAR()">🔍 Diagnostic</button>
+        <button type="button" id="arLock" onclick="verrouillerAR()">🔒 Verrouiller la visée AR</button>
+      </div>
     </div>
     <div id="arZoomControls" aria-label="Zoom AR">
       <button type="button" id="arZoom1" class="active" onclick="reglerZoomAR(1)">1×</button>
@@ -383,6 +389,8 @@ Recherche de votre position GPS...
     <div id="arLockedSight"></div><div id="arLockedLabel"></div>
     <div id="arReference"></div><div id="arReferenceLabel"></div>
     <div id="arStatus">Initialisation de la caméra et de la boussole…</div>
+    <div id="arDiagnostic"><button type="button" id="arDiagClose" onclick="fermerDiagnosticAR()">✕</button><b>DIAGNOSTIC AR V5.13</b>
+<div id="arDiagnosticContent">Lecture…</div></div>
     <div id="arReadout">Azimut : —</div>
     <button type="button" id="arReport" onclick="reporterAzimutARSurCarte(); fermerAR();" disabled>🗺️ Reporter sur la carte</button>
   </div>
@@ -2433,6 +2441,95 @@ function gererOrientationAR(event) {
         : "Visée AR en direct";
 }
 
+async function afficherDiagnosticAR() {
+    const box = document.getElementById("arDiagnostic");
+    const content = document.getElementById("arDiagnosticContent");
+    if (!box || !content) return;
+    box.classList.add("active");
+
+    const lignes = [];
+    lignes.push("AR actif : " + arActive);
+    lignes.push("Zoom demandé : " + arZoom + "×");
+    lignes.push("FOV calculé : " + champVisionAREffectif().toFixed(1) + "°");
+    lignes.push("");
+
+    const video = document.getElementById("arVideo");
+    if (video) {
+        lignes.push("VIDÉO");
+        lignes.push("  readyState : " + video.readyState);
+        lignes.push("  dimensions vidéo : " + (video.videoWidth || 0) + " × " + (video.videoHeight || 0));
+        lignes.push("  dimensions écran : " + Math.round(video.clientWidth) + " × " + Math.round(video.clientHeight));
+        lignes.push("  zoom CSS : " + (getComputedStyle(video).transform || "aucun"));
+        lignes.push("");
+    }
+
+    const track = arStream && arStream.getVideoTracks ? arStream.getVideoTracks()[0] : null;
+    if (!track) {
+        lignes.push("CAMÉRA");
+        lignes.push("  ❌ Aucun flux vidéo actif");
+    } else {
+        const settings = track.getSettings ? track.getSettings() : {};
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        lignes.push("CAMÉRA ACTIVE");
+        lignes.push("  label : " + (track.label || "(aucun label fourni)"));
+        lignes.push("  état : " + track.readyState);
+        lignes.push("  deviceId : " + (settings.deviceId ? settings.deviceId.slice(0, 12) + "…" : "non exposé"));
+        lignes.push("  facingMode : " + (settings.facingMode || "non exposé"));
+        lignes.push("  résolution : " + ((settings.width || "?") + " × " + (settings.height || "?")));
+        lignes.push("  frameRate : " + (settings.frameRate || "non exposé"));
+        lignes.push("  zoom actuel : " + (typeof settings.zoom === "number" ? settings.zoom : "non exposé"));
+        lignes.push("  capacité zoom : " + (caps.zoom ? JSON.stringify(caps.zoom) : "NON EXPOSÉE"));
+        lignes.push("  torch : " + (caps.torch === true ? "oui" : "non exposé"));
+        lignes.push("");
+    }
+
+    lignes.push("CAMÉRAS EXPOSÉES PAR SAFARI");
+    try {
+        const devices = await obtenirCamerasArriereAR();
+        if (!devices.length) {
+            lignes.push("  ❌ Aucune caméra retournée par enumerateDevices()");
+        } else {
+            devices.forEach((d, i) => {
+                lignes.push(`  ${i + 1}. ${d.label || "(label masqué par Safari)"}`);
+                lignes.push("     kind=" + d.kind + " | id=" + (d.deviceId ? d.deviceId.slice(0, 12) + "…" : "non exposé"));
+            });
+        }
+    } catch (e) {
+        lignes.push("  ❌ enumerateDevices : " + e.message);
+    }
+
+    lignes.push("");
+    lignes.push("ORIENTATION / AZIMUT");
+    lignes.push("  azimut vrai actuel : " + (arCapVrai === null ? "—" : arCapVrai.toFixed(1) + "°"));
+    lignes.push("  visée mémorisée : " + (azimutARMemorise === null ? "—" : azimutARMemorise.toFixed(1) + "°"));
+    lignes.push("  déclinaison : " + (declinaison === null ? "—" : declinaison.toFixed(2) + "°"));
+    lignes.push("");
+    lignes.push("INTERPRÉTATION");
+    if (track) {
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        if (caps.zoom) {
+            lignes.push("  ✓ Safari expose une capacité de zoom matériel sur ce flux.");
+        } else {
+            lignes.push("  ⚠ Safari n’expose PAS de capacité de zoom matériel sur ce flux.");
+            lignes.push("  → 2×/4× peuvent donc être du zoom numérique/CSS.");
+        }
+        const label = (track.label || "").toLowerCase();
+        if (/telephoto|teleobjectif|tele\b/.test(label)) {
+            lignes.push("  ✓ Le nom du flux contient une indication de téléobjectif.");
+        } else {
+            lignes.push("  ⚠ Le nom du flux ne permet pas d’identifier un téléobjectif.");
+        }
+    }
+
+    content.textContent = lignes.join("\n");
+    console.log("Diagnostic AR V5.13", lignes.join("\n"));
+}
+
+function fermerDiagnosticAR() {
+    const box = document.getElementById("arDiagnostic");
+    if (box) box.classList.remove("active");
+}
+
 async function ouvrirAR() {
     if (!window.isSecureContext) {
         alert("Le mode AR nécessite HTTPS.");
@@ -2522,6 +2619,7 @@ function verrouillerAR() {
 }
 
 function fermerAR() {
+    fermerDiagnosticAR();
     arActive = false;
     arVerrouille = false;
     arCapVrai = null;
