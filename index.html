@@ -2147,37 +2147,129 @@ function reglerZoomAR(niveau) {
 }
 
 
+async function obtenirCamerasArriereAR() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        return devices.filter(d => d.kind === "videoinput");
+    } catch (e) {
+        console.log("Impossible d’énumérer les caméras AR :", e);
+        return [];
+    }
+}
+
+function estTeleobjectifAR(device) {
+    const label = (device.label || "").toLowerCase();
+    return /telephoto|teleobjectif|tele\b|tele camera|back tele/.test(label);
+}
+
+function estUltraGrandAngleAR(device) {
+    const label = (device.label || "").toLowerCase();
+    return /ultra.?wide|ultra.?grand|ultra.?large/.test(label);
+}
+
+async function ouvrirFluxCameraAR(constraintsVideo) {
+    if (arStream) {
+        arStream.getTracks().forEach(t => t.stop());
+        arStream = null;
+    }
+    arStream = await navigator.mediaDevices.getUserMedia({
+        video: constraintsVideo,
+        audio: false
+    });
+    const video = document.getElementById("arVideo");
+    if (video) {
+        video.srcObject = arStream;
+        try { await video.play(); } catch (e) {}
+    }
+}
+
+async function choisirCameraPourZoomAR(niveau) {
+    // Safari/iOS ne garantit pas un contrôle direct de l'objectif par
+    // getUserMedia. Après autorisation, enumerateDevices() peut toutefois
+    // exposer séparément la caméra téléobjectif. On l'utilise explicitement
+    // lorsque son nom est disponible.
+    if (niveau === 1) {
+        await ouvrirFluxCameraAR({ facingMode: { ideal: "environment" } });
+        return { camera: "principale", optique: false };
+    }
+
+    const cameras = await obtenirCamerasArriereAR();
+    const arrieres = cameras.filter(d => {
+        const label = (d.label || "").toLowerCase();
+        return /back|rear|arrière|arriere|environment|dos/.test(label);
+    });
+
+    const tele = arrieres.find(estTeleobjectifAR);
+
+    if (tele && tele.deviceId) {
+        try {
+            await ouvrirFluxCameraAR({ deviceId: { exact: tele.deviceId } });
+            return { camera: tele.label || "téléobjectif", optique: true };
+        } catch (e) {
+            console.log("Téléobjectif refusé par Safari/iOS :", e);
+        }
+    }
+
+    // Si le téléobjectif n'est pas exposé, on reste sur la caméra arrière
+    // principale. Le niveau demandé sera alors complété par le zoom CSS.
+    await ouvrirFluxCameraAR({ facingMode: { ideal: "environment" } });
+    return { camera: "principale", optique: false };
+}
+
 async function appliquerZoomCameraAR(niveau) {
-    // Sur les iPhone/Safari qui exposent la capacité "zoom" de la caméra
-    // arrière, on demande au flux caméra son vrai niveau de zoom. Cela peut
-    // permettre à iOS de sélectionner/utiliser l'optique téléobjectif.
-    // Si Safari ne l'expose pas, le zoom CSS déjà présent reste le secours.
-    if (!arStream) return;
-    const track = arStream.getVideoTracks && arStream.getVideoTracks()[0];
-    if (!track || !track.getCapabilities || !track.applyConstraints) return;
+    if (!arActive || !arStream) return;
 
     try {
-        const caps = track.getCapabilities();
-        if (!caps || typeof caps.zoom !== "object") return;
+        const resultat = await choisirCameraPourZoomAR(niveau);
+        const video = document.getElementById("arVideo");
 
-        const min = typeof caps.zoom.min === "number" ? caps.zoom.min : 1;
-        const max = typeof caps.zoom.max === "number" ? caps.zoom.max : 1;
-        const step = typeof caps.zoom.step === "number" && caps.zoom.step > 0 ? caps.zoom.step : null;
-        let z = Math.max(min, Math.min(max, niveau));
-        if (step) z = min + Math.round((z - min) / step) * step;
-        z = Math.max(min, Math.min(max, z));
+        // Le CSS complète le grossissement lorsque l'objectif télé n'est pas
+        // exposé par Safari, ou pour atteindre 4×.
+        let zoomCSS = 1;
+        if (niveau === 2) zoomCSS = resultat.optique ? 1 : 2;
+        if (niveau === 4) zoomCSS = resultat.optique ? 2 : 4;
+        if (video) video.style.setProperty("--ar-camera-zoom", zoomCSS);
 
-        await track.applyConstraints({ advanced: [{ zoom: z }] });
+        // Si le flux sélectionné expose lui-même une capacité zoom, on peut
+        // l'utiliser pour compléter le niveau demandé sans changer l'azimut.
+        const track = arStream.getVideoTracks && arStream.getVideoTracks()[0];
+        let zoomMateriel = false;
+        if (track && track.getCapabilities && track.applyConstraints) {
+            const caps = track.getCapabilities();
+            if (caps && caps.zoom && typeof caps.zoom === "object") {
+                const min = typeof caps.zoom.min === "number" ? caps.zoom.min : 1;
+                const max = typeof caps.zoom.max === "number" ? caps.zoom.max : 1;
+                const step = typeof caps.zoom.step === "number" && caps.zoom.step > 0 ? caps.zoom.step : null;
+                let z = Math.max(min, Math.min(max, niveau));
+                if (step) z = min + Math.round((z - min) / step) * step;
+                z = Math.max(min, Math.min(max, z));
+                if (z > 1) {
+                    await track.applyConstraints({ advanced: [{ zoom: z }] });
+                    zoomMateriel = true;
+                    if (video) video.style.setProperty("--ar-camera-zoom", 1);
+                }
+            }
+        }
 
         const st = document.getElementById("arStatus");
         if (st && arActive) {
-            st.textContent = niveau === 1
-                ? "Visée AR en direct — caméra 1×"
-                : `Visée AR en direct — caméra ${z.toFixed(1)}×`;
+            if (niveau === 1) {
+                st.textContent = "Visée AR en direct — caméra principale 1×";
+            } else if (resultat.optique) {
+                st.textContent = niveau === 2
+                    ? "Visée AR — téléobjectif 2×"
+                    : "Visée AR — téléobjectif + zoom 4×";
+            } else if (zoomMateriel) {
+                st.textContent = `Visée AR — zoom caméra ${niveau}×`;
+            } else {
+                st.textContent = `Visée AR — zoom numérique ${niveau}× (téléobjectif non exposé)`;
+            }
         }
     } catch (e) {
-        // Le CSS reste le secours si le navigateur refuse le zoom matériel.
-        console.log("Zoom caméra matériel non disponible :", e);
+        console.log("Sélection/zoom caméra AR non disponible :", e);
+        const video = document.getElementById("arVideo");
+        if (video) video.style.setProperty("--ar-camera-zoom", niveau);
     }
 }
 
@@ -2357,15 +2449,15 @@ async function ouvrirAR() {
             if (p !== "granted") throw new Error("Orientation refusée");
         }
 
+        // Ouvre d'abord la caméra arrière principale pour obtenir les noms
+        // des objectifs auprès de Safari, puis les niveaux 2×/4× peuvent
+        // tenter de sélectionner explicitement le téléobjectif.
         arStream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: { ideal: "environment" } },
             audio: false
         });
-
         video.srcObject = arStream;
         arActive = true;
-        // Demande 1× au flux réel dès l'ouverture; si iOS expose le zoom
-        // matériel, le niveau 2×/4× pourra ensuite utiliser cette capacité.
         await appliquerZoomCameraAR(1);
         arVerrouille = false;
         arCapVrai = null;
