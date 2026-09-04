@@ -236,7 +236,7 @@ button:hover {
 
 
 /* =========================================================
-   V5.9 — MODE AR / AZIMUT
+   V5.10 — MODE AR / AZIMUT + ZOOM 1× / 2× / 4×
    ========================================================= */
 #arView {
     position: fixed;
@@ -253,14 +253,21 @@ button:hover {
     width:100%; height:100%;
     object-fit:cover;
     background:#000;
+    transform:scale(var(--ar-camera-zoom, 1));
+    transform-origin:center center;
+    transition:transform .12s ease-out;
+    will-change:transform;
 }
 #arHud { position:absolute; z-index:10001; inset:0; pointer-events:none; color:white; font-family:Arial,sans-serif; text-shadow:0 1px 4px #000; }
 #arTop { position:absolute; z-index:10003; top:env(safe-area-inset-top,12px); left:12px; right:12px; display:flex; justify-content:space-between; align-items:center; pointer-events:auto; }
 #arClose, #arLock { position:relative; z-index:10004; pointer-events:auto; margin:0; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.65); }
+#arZoomControls { position:absolute; z-index:10004; top:calc(env(safe-area-inset-top, 12px) + 54px); left:50%; transform:translateX(-50%); display:flex; gap:6px; pointer-events:auto; background:rgba(0,0,0,.48); padding:5px; border-radius:10px; }
+#arZoomControls button { margin:0; min-width:48px; padding:7px 10px; background:rgba(0,0,0,.68); color:#fff; border:1px solid rgba(255,255,255,.58); border-radius:7px; font-weight:bold; }
+#arZoomControls button.active { background:rgba(255,255,255,.92); color:#000; }
 #arCompass { position:absolute; top:25%; left:0; right:0; height:90px; overflow:hidden; }
 #arScale { position:absolute; left:50%; top:0; display:flex; align-items:flex-start; white-space:nowrap; font-size:18px; font-weight:bold; transition:transform .08s linear; will-change:transform; }
-.arTick { flex:0 0 40px; width:40px; min-width:40px; box-sizing:border-box; text-align:center; vertical-align:top; }
-.arTick.major { flex-basis:40px; width:40px; min-width:40px; font-size:20px; }
+.arTick { flex:0 0 var(--ar-tick-width, 40px); width:var(--ar-tick-width, 40px); min-width:var(--ar-tick-width, 40px); box-sizing:border-box; text-align:center; vertical-align:top; }
+.arTick.major { flex-basis:var(--ar-tick-width, 40px); width:var(--ar-tick-width, 40px); min-width:var(--ar-tick-width, 40px); font-size:20px; }
 #arCenter { position:absolute; top:calc(25% - 10px); left:50%; transform:translateX(-50%); font-size:48px; line-height:1; color:#00aaff; }
 #arReport { position:absolute; left:50%; bottom:calc(70px + env(safe-area-inset-bottom)); transform:translateX(-50%); z-index:10004; pointer-events:auto; }
 #arReadout { position:absolute; left:12px; right:12px; bottom:calc(18px + env(safe-area-inset-bottom)); text-align:center; font-size:17px; font-weight:bold; line-height:1.55; }
@@ -365,6 +372,11 @@ Recherche de votre position GPS...
     <div id="arTop">
       <button type="button" id="arClose" onclick="fermerAR()">✕ Fermer</button>
       <button type="button" id="arLock" onclick="verrouillerAR()">🔒 Verrouiller la visée AR</button>
+    </div>
+    <div id="arZoomControls" aria-label="Zoom AR">
+      <button type="button" id="arZoom1" class="active" onclick="reglerZoomAR(1)">1×</button>
+      <button type="button" id="arZoom2" onclick="reglerZoomAR(2)">2×</button>
+      <button type="button" id="arZoom4" onclick="reglerZoomAR(4)">4×</button>
     </div>
     <div id="arCompass"><div id="arScale"></div></div>
     <div id="arCenter">│</div>
@@ -2094,6 +2106,7 @@ let arAzimutCarte = null;
 let arPositionCiblePct = 50;
 let arPositionVerrouilleePct = null;
 let arDifference = null;
+let arZoom = 1;
 
 // Champ de vision horizontal de travail. Il sert uniquement à transformer
 // l'écart angulaire en position visuelle dans l'image AR.
@@ -2101,6 +2114,35 @@ const AR_FOV_HORIZONTAL = 60;
 
 function azimutCarteAR() {
     return (A && B) ? calculerAzimutValeur(A, B) : null;
+}
+
+function champVisionAREffectif() {
+    return AR_FOV_HORIZONTAL / arZoom;
+}
+
+function reglerZoomAR(niveau) {
+    if (![1, 2, 4].includes(niveau)) return;
+    arZoom = niveau;
+
+    const video = document.getElementById("arVideo");
+    if (video) video.style.setProperty("--ar-camera-zoom", arZoom);
+
+    const scale = document.getElementById("arScale");
+    if (scale) scale.style.setProperty("--ar-tick-width", `${40 * arZoom}px`);
+
+    [1, 2, 4].forEach(z => {
+        const b = document.getElementById(`arZoom${z}`);
+        if (b) b.classList.toggle("active", z === arZoom);
+    });
+
+    // Le zoom resserre le champ visuel mais ne change jamais l'azimut.
+    mettreAJourEchelleAR();
+    if (arAzimutCarte !== null && arCapVrai !== null) {
+        const ecart = angleSigne(arAzimutCarte - arCapVrai);
+        arPositionCiblePct = 50 + (ecart / champVisionAREffectif()) * 100;
+        afficherPositionCibleAR();
+    }
+    mettreAJourViséeVerrouilleeAR();
 }
 
 function construireEchelleAR() {
@@ -2127,7 +2169,7 @@ function mettreAJourEchelleAR() {
     if (!scale || arCapVrai === null) return;
     // Le centre bleu représente le cap actuel. L'échelle défile donc
     // sous ce repère : N/E/S/O se déplacent réellement lorsque l'iPhone tourne.
-    const pixelsParDegre = 40 / 10;
+    const pixelsParDegre = (40 * arZoom) / 10;
     // Échelle symétrique : -720° ... 0° ... +720°.
     // Le 0° est exactement au centre de l'échelle.
     // Quand le cap augmente vers l'Est, l'échelle se déplace vers la gauche
@@ -2193,7 +2235,7 @@ function mettreAJourViséeVerrouilleeAR() {
     }
 
     const ecart = angleSigne(azimutARMemorise - arCapVrai);
-    const position = 50 + (ecart / AR_FOV_HORIZONTAL) * 100;
+    const position = 50 + (ecart / champVisionAREffectif()) * 100;
     const visible = position >= -5 && position <= 105;
     line.style.display = visible ? "block" : "none";
     label.style.display = visible ? "block" : "none";
@@ -2247,7 +2289,7 @@ function gererOrientationAR(event) {
     // Référence rouge A→B : toujours indépendante.
     if (arAzimutCarte !== null) {
         const ecart = angleSigne(arAzimutCarte - arCapVrai);
-        arPositionCiblePct = 50 + (ecart / AR_FOV_HORIZONTAL) * 100;
+        arPositionCiblePct = 50 + (ecart / champVisionAREffectif()) * 100;
         afficherPositionCibleAR();
     }
 
@@ -2292,8 +2334,10 @@ async function ouvrirAR() {
         arPositionCiblePct = 50;
         arPositionVerrouilleePct = null;
         arDifference = null;
+        arZoom = 1;
 
         construireEchelleAR();
+        reglerZoomAR(1);
         mettreAJourCibleAR();
         view.classList.add("active");
 
@@ -2354,6 +2398,16 @@ function fermerAR() {
     arPositionCiblePct = 50;
     arPositionVerrouilleePct = null;
     arDifference = null;
+    arZoom = 1;
+
+    const zoomVideo = document.getElementById("arVideo");
+    if (zoomVideo) zoomVideo.style.setProperty("--ar-camera-zoom", 1);
+    const zoomScale = document.getElementById("arScale");
+    if (zoomScale) zoomScale.style.setProperty("--ar-tick-width", "40px");
+    [1, 2, 4].forEach(z => {
+        const b = document.getElementById(`arZoom${z}`);
+        if (b) b.classList.toggle("active", z === 1);
+    });
 
     window.removeEventListener("deviceorientation", gererOrientationAR, true);
     window.removeEventListener("deviceorientationabsolute", gererOrientationAR, true);
