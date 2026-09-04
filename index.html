@@ -2126,6 +2126,7 @@ function reglerZoomAR(niveau) {
 
     const video = document.getElementById("arVideo");
     if (video) video.style.setProperty("--ar-camera-zoom", arZoom);
+    appliquerZoomCameraAR(niveau);
 
     const scale = document.getElementById("arScale");
     if (scale) scale.style.setProperty("--ar-tick-width", `${40 * arZoom}px`);
@@ -2143,6 +2144,41 @@ function reglerZoomAR(niveau) {
         afficherPositionCibleAR();
     }
     mettreAJourViséeVerrouilleeAR();
+}
+
+
+async function appliquerZoomCameraAR(niveau) {
+    // Sur les iPhone/Safari qui exposent la capacité "zoom" de la caméra
+    // arrière, on demande au flux caméra son vrai niveau de zoom. Cela peut
+    // permettre à iOS de sélectionner/utiliser l'optique téléobjectif.
+    // Si Safari ne l'expose pas, le zoom CSS déjà présent reste le secours.
+    if (!arStream) return;
+    const track = arStream.getVideoTracks && arStream.getVideoTracks()[0];
+    if (!track || !track.getCapabilities || !track.applyConstraints) return;
+
+    try {
+        const caps = track.getCapabilities();
+        if (!caps || typeof caps.zoom !== "object") return;
+
+        const min = typeof caps.zoom.min === "number" ? caps.zoom.min : 1;
+        const max = typeof caps.zoom.max === "number" ? caps.zoom.max : 1;
+        const step = typeof caps.zoom.step === "number" && caps.zoom.step > 0 ? caps.zoom.step : null;
+        let z = Math.max(min, Math.min(max, niveau));
+        if (step) z = min + Math.round((z - min) / step) * step;
+        z = Math.max(min, Math.min(max, z));
+
+        await track.applyConstraints({ advanced: [{ zoom: z }] });
+
+        const st = document.getElementById("arStatus");
+        if (st && arActive) {
+            st.textContent = niveau === 1
+                ? "Visée AR en direct — caméra 1×"
+                : `Visée AR en direct — caméra ${z.toFixed(1)}×`;
+        }
+    } catch (e) {
+        // Le CSS reste le secours si le navigateur refuse le zoom matériel.
+        console.log("Zoom caméra matériel non disponible :", e);
+    }
 }
 
 function construireEchelleAR() {
@@ -2328,6 +2364,9 @@ async function ouvrirAR() {
 
         video.srcObject = arStream;
         arActive = true;
+        // Demande 1× au flux réel dès l'ouverture; si iOS expose le zoom
+        // matériel, le niveau 2×/4× pourra ensuite utiliser cette capacité.
+        await appliquerZoomCameraAR(1);
         arVerrouille = false;
         arCapVrai = null;
         arAzimutCarte = azimutCarteAR();
